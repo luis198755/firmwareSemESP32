@@ -1,11 +1,26 @@
 // Librerías
 #include <esp_timer.h>
+// -----------------------Librerías OLED----------------------------
+#include <Wire.h>			          // libreria para bus I2C
+#include <Adafruit_GFX.h>		    // libreria para pantallas graficas
+#include <Adafruit_SSD1306.h>		// libreria para controlador SSD1306
 
+#define ANCHO 128			// reemplaza ocurrencia de ANCHO por 128
+#define ALTO 64				// reemplaza ocurrencia de ALTO por 64
+
+#define OLED_RESET 4			// necesario por la libreria pero no usado
+Adafruit_SSD1306 oled(ANCHO, ALTO, &Wire, OLED_RESET);	// crea objeto
+// -----------------------Librerías OLED----------------------------FIN
 ////*Definición de pines de McU para control de registros*///
-int pinData  = 15;
+//int pinData  = 15;
+//int pinLatch = 33;
+//int pinClock = 27;
+//int pinOE = 12;
+
+int pinData  = 12;
 int pinLatch = 33;
-int pinClock = 27;
-int pinOE = 12;
+int pinClock = 15;
+int pinOE = 27;
 ////*Definición de pines de McU de entrada para pruebas*///
 #define CantidadBotonEntrada 4
 int botonEntrada[CantidadBotonEntrada] = {26, 25, 34, 39};
@@ -21,8 +36,10 @@ unsigned long te = 375;
 unsigned long t = 10000;
 // Arreglos de programación
 unsigned long prog0[31] = {
-                            0b00000000000000000000000000000000, // ***Escenario 1***
-                            0b10010010010000100100000000000000, // Transición de Verde a Ambar
+                            0b00000000000000000000000000000000, // 
+
+                            0b10010010010000100100000000000000, // ***Escenario 1***
+
                             0b00000000010000100100000000000000, // Transición de Verde a Ambar
                             0b10010010010000100100000000000000, // Transición de Verde a Ambar
                             0b00000000010000100100000000000000, // Transición de Verde a Ambar
@@ -31,9 +48,11 @@ unsigned long prog0[31] = {
                             0b10010010010000100100000000000000, // Transición de Verde a Ambar
                             0b00000000010000100100000000000000, // Transición de Verde a Ambar
                             0b10010010010000100100000000000000, // Transición de Verde a Ambar
+
                             0b01001001010000100100000000000000, // Tiempo de ambar  
 
                             0b00100100110000110000000000000000, // ***Escenario 2***
+
                             0b00100100100000100000000000000000, // Transición de Verde a Ambar
                             0b00100100110000110000000000000000, // Transición de Verde a Ambar
                             0b00100100100000100000000000000000, // Transición de Verde a Ambar
@@ -42,9 +61,11 @@ unsigned long prog0[31] = {
                             0b00100100110000110000000000000000, // Transición de Verde a Ambar
                             0b00100100100000100000000000000000, // Transición de Verde a Ambar
                             0b00100100110000110000000000000000, // Transición de Verde a Ambar
+
                             0b00100100101000101000000000000000, // Tiempo de ambar  
 
                             0b00100110000110000100000000000000, // ***Escenario 3***
+
                             0b00100110000100000100000000000000, // Transición de Verde a Ambar
                             0b00100110000110000100000000000000, // Transición de Verde a Ambar
                             0b00100110000100000100000000000000, // Transición de Verde a Ambar
@@ -53,10 +74,59 @@ unsigned long prog0[31] = {
                             0b00100110000110000100000000000000, // Transición de Verde a Ambar
                             0b00100110000100000100000000000000, // Transición de Verde a Ambar
                             0b00100110000110000100000000000000, // Transición de Verde a Ambar
+
                             0b00100110000101000100000000000000  // Tiempo de ambar  
 };    
 
-int longitud = sizeof(prog0) / sizeof(prog0[0]);
+int longitud0 = sizeof(prog0) / sizeof(prog0[0]);
+
+
+// Arreglos de programación
+unsigned long prog00[31] = {
+                            0b00000000000000000000000000000000, // 
+                            
+                            0b00100100100110010000000000000000, // ***Escenario 1***
+
+                            0b00000000000010010000000000000000, // Transición de Verde a Ambar
+                            0b00100100100110010000000000000000, // Transición de Verde a Ambar
+                            0b00000000000010010000000000000000, // Transición de Verde a Ambar
+                            0b00100100100110010000000000000000, // Transición de Verde a Ambar
+                            0b00000000000010010000000000000000, // Transición de Verde a Ambar
+                            0b00100100100110010000000000000000, // Transición de Verde a Ambar
+                            0b00000000000010010000000000000000, // Transición de Verde a Ambar
+                            0b00100100100110010000000000000000, // Transición de Verde a Ambar
+
+                            0b01001001000110010000000000000000, // Transición de Verde a Ambar
+
+                            0b10010010000110000100000000000000, // ***Escenario 2***
+
+                            0b10010010000010000000000000000000, // Transición de Verde a Ambar
+                            0b10010010000110000100000000000000, // Transición de Verde a Ambar
+                            0b10010010000010000000000000000000, // Transición de Verde a Ambar
+                            0b10010010000110000100000000000000, // Transición de Verde a Ambar
+                            0b10010010000010000000000000000000, // Transición de Verde a Ambar
+                            0b10010010000110000100000000000000, // Transición de Verde a Ambar
+                            0b10010010000010000000000000000000, // Transición de Verde a Ambar
+                            0b10010010000110000100000000000000, // Transición de Verde a Ambar
+
+                            0b10010010001010001000000000000000, // Transición de Verde a Ambar
+
+                            0b10010000110000110000000000000000, // ***Escenario 3***
+
+                            0b10010000110000010000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000110000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000010000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000110000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000010000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000110000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000010000000000000000, // Transición de Verde a Ambar
+                            0b10010000110000110000000000000000, // Transición de Verde a Ambar
+
+                            0b10010000110001010000000000000000  // Transición de Verde a Ambar
+
+};
+
+int longitud = sizeof(prog00) / sizeof(prog00[0]);
 
 unsigned long time0[31] = {  
                             0,
@@ -122,6 +192,9 @@ void setup() {
   //Inicialización del puerto serial del mCU
   Serial.begin(115200);
 
+  //////////////////////INICIALIZA PANTALLA OLED/////////////////////////
+  initOLED();
+
   //Designación de  pines del mCU como entrada y salida
   ////////////*Definición de pines como salida*////////////
   pinMode(pinData, OUTPUT);
@@ -152,8 +225,8 @@ void loop() {
   digitalWrite(pinOE, LOW);
 
   // Lectura de Modo
-  //modofunc();
-  aislado();
+  modofunc();
+  //aislado();
 
   
   //delay(1000);
@@ -179,6 +252,7 @@ void modofunc(){
       modo = 0; // Aislado
       indice = 0;
       Serial.println("Modo: Aislado");
+      displayInfo("Aislado");
       estadoBoton[i] = HIGH;
       previousTime = millisESP32 ();
     }
@@ -191,10 +265,11 @@ void modofunc(){
       indice++;
       Serial.println("Modo: Manual");
       Serial.print("Indice: ");
-      Serial.print(indice);
-      Serial.println("");
+      displayInfo("Manual");
+      Serial.println(indice);
       estadoBoton[i] = HIGH;
       previousTime = millisESP32 ();
+      interfaceProg(*(prog00 + indice));
     }
     else if (lecturaBoton[i]==HIGH && i==1){
       estadoBoton[i] = LOW;
@@ -204,6 +279,7 @@ void modofunc(){
       modo = 2; // Destello
       indice = 0;
       Serial.println("Modo: Destello");
+      displayInfo("Destello");
       estadoBoton[i] = HIGH;
       previousTime = millisESP32 ();
     }
@@ -215,6 +291,7 @@ void modofunc(){
       modo = 3; // Sicronizado
       indice = 0;
       Serial.println("Modo: Sicronizado");
+      displayInfo("Sicronizado");
       estadoBoton[i] = HIGH;
       previousTime = millisESP32 ();
     }
@@ -244,11 +321,11 @@ void modofunc(){
 
 // Función de modo aislado
 void aislado(){
-  tiempoReal(time0, prog0, longitud);
+  tiempoReal(time0, prog00, longitud);
 }
 // Función de modo manual
 void manual(){
-  tiempoReal(time0, prog0, longitud);
+  tiempoReal(time0, prog00, longitud);
 }
 // Función de destello
 void destello(){
@@ -266,16 +343,23 @@ void tiempoReal(unsigned long* time, unsigned long* prog, int longitud){
     previousTime = millisESP32 ();
     
     digitalWrite (LED_PIN, !digitalRead (LED_PIN));
+
     // Incrementar el índice en uno
     indice++;
+    
     // Si el índice llega al final del arreglo, reiniciarlo a cero
-    if (indice != longitud) {
+    if (indice >= longitud) {
+        indice = 0;
+    }
+    else {
         // Ejecución de la Programación
         interfaceProg(*(prog + indice));
     }
-    else {
-        indice = 0;
-    }
+
+    
+
+    Serial.print("Indice: ");
+    Serial.println(indice);
   }
 }
 // Returns the number of milliseconds passed since the ESP32 chip was powered on or reset
@@ -290,4 +374,22 @@ void ledWrite(char Reg4, char Reg3, char Reg2, char Reg1){
    shiftOut(pinData, pinClock, LSBFIRST, Reg1);
    digitalWrite(pinLatch, HIGH);
    digitalWrite(pinLatch, LOW);
+}
+
+// Inicializa la pantalla OLED
+void initOLED() {
+  Wire.begin();					// inicializa bus I2C
+  oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);	// inicializa pantalla con direccion 0x3C
+}
+
+void displayInfo(String modo) {
+   /////////////////////OLED////////////////////////////
+    oled.clearDisplay();			// limpia pantalla
+    oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
+    oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
+    oled.setTextSize(2);			// establece tamano de texto en 1
+    oled.print("Modo: "); 	// escribe en pantalla el texto
+    oled.setCursor(0, 16);
+    oled.print(modo); 	// escribe en pantalla el texto
+    oled.display();			// muestra en pantalla todo lo establecido anteriormente
 }
