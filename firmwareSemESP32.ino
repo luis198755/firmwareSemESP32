@@ -1,7 +1,8 @@
 // Librerías
 #include <esp_timer.h>
-// -----------------------Librerías OLED----------------------------
+// -----------------------Librerías I2C----------------------------
 #include <Wire.h>			          // libreria para bus I2C
+// -----------------------Librerías OLED----------------------------
 #include <Adafruit_GFX.h>		    // libreria para pantallas graficas
 #include <Adafruit_SSD1306.h>		// libreria para controlador SSD1306
 
@@ -11,6 +12,29 @@
 #define OLED_RESET 4			// necesario por la libreria pero no usado
 Adafruit_SSD1306 oled(ANCHO, ALTO, &Wire, OLED_RESET);	// crea objeto
 // -----------------------Librerías OLED----------------------------FIN
+// -----------------------Librerías RTC----------------------------
+#include "RTClib.h"
+RTC_DS3231 rtc;
+DateTime last_time;
+// -----------------------Librerías RTC----------------------------FIN
+// -----------------------Librerías GPS----------------------------
+#include <TinyGPSPlus.h>
+static const uint32_t GPSBaud = 9600;
+TinyGPSPlus gps;  // The TinyGPSPlus object
+
+///////////////////gps/////////////////////////
+int ano_gps;
+int mes_gps;
+int dia_gps;
+int hora_gps;
+int minu_gps; 
+int sec_gps;
+unsigned int centsec_gps;
+
+double lat;
+double lon;
+// -----------------------Librerías GPS----------------------------FIN
+
 ////*Definición de pines de McU para control de registros*///
 //int pinData  = 15;
 //int pinLatch = 33;
@@ -191,9 +215,11 @@ int indice = 0;
 void setup() {
   //Inicialización del puerto serial del mCU
   Serial.begin(115200);
-
+  Wire.begin();					// inicializa bus I2C
   //////////////////////INICIALIZA PANTALLA OLED/////////////////////////
   initOLED();
+  initRTC();
+  initGPS();
 
   //Designación de  pines del mCU como entrada y salida
   ////////////*Definición de pines como salida*////////////
@@ -223,13 +249,10 @@ void loop() {
   // Declaración de variables locales
   ////////////*Activar Registros*////////////////////////
   digitalWrite(pinOE, LOW);
-
   // Lectura de Modo
   modofunc();
-  //aislado();
 
-  
-  //delay(1000);
+  timeProc01(); 
 
 }
 //////////////////////*Funciones*/////////////////////////
@@ -342,7 +365,7 @@ void tiempoReal(unsigned long* time, unsigned long* prog, int longitud){
   if ( (millisESP32 () - previousTime >= *(time + indice)) ){
     previousTime = millisESP32 ();
     
-    digitalWrite (LED_PIN, !digitalRead (LED_PIN));
+    //digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
     // Incrementar el índice en uno
     indice++;
@@ -378,10 +401,15 @@ void ledWrite(char Reg4, char Reg3, char Reg2, char Reg1){
 
 // Inicializa la pantalla OLED
 void initOLED() {
-  Wire.begin();					// inicializa bus I2C
   oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);	// inicializa pantalla con direccion 0x3C
+  oled.clearDisplay();			// limpia pantalla
+  oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
+  oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
+  oled.setTextSize(1);			// establece tamano de texto en 1
+  oled.print("TrafficLight"); 	// escribe en pantalla el texto
+  oled.display();			// muestra en pantalla todo lo establecido anteriormente
 }
-
+// Función de escritura de OLED
 void displayInfo(String modo) {
    /////////////////////OLED////////////////////////////
     oled.clearDisplay();			// limpia pantalla
@@ -391,5 +419,102 @@ void displayInfo(String modo) {
     oled.print("Modo: "); 	// escribe en pantalla el texto
     oled.setCursor(0, 16);
     oled.print(modo); 	// escribe en pantalla el texto
+
+
+    oled.display();			// muestra en pantalla todo lo establecido anteriormente
+}
+// Función de inicialización del RTC
+void initRTC() {
+  // Initialize RTC
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1);
+  }
+
+  if (rtc.lostPower()) {
+      Serial.println("RTC lost power, lets set the time!");
+      // following line sets the RTC to the date & time this sketch was compiled
+      // Set the RTC to the date & time this sketch was compiled
+      rtc.adjust(DateTime(__DATE__, __TIME__));
+      // This line sets the RTC with an explicit date & time, for example to set
+      // January 21, 2014 at 3am you would call:
+      //rtc.adjust(DateTime(2023, 2, 14, 9, 37, 0));
+  }
+  
+  // Store the current time
+  last_time = rtc.now();
+
+  // Print initialization message
+  Serial.println("Inicio");
+}
+// Función de ejecución de proceso cada 1 s
+void timeProc01() {
+  DateTime now = rtc.now();
+
+  // Check if one second has passed
+  if ((now.unixtime() - last_time.unixtime()) >= 1) {
+    // Print message if time is up
+    //Serial.println("Time's up!");
+    digitalWrite (LED_PIN, !digitalRead (LED_PIN));
+
+
+
+    // Update the last_time variable
+    last_time = now;
+  }
+}
+// Función de lectura de info de GPS
+void readGPS() {
+
+  // This sketch displays information every time a new sentence is correctly encoded.
+  while (Serial1.available() > 0){
+    if (gps.encode(Serial1.read())) {
+      ano_gps = gps.date.year();
+      mes_gps = gps.date.month();
+      dia_gps = gps.date.day();
+      hora_gps = gps.time.hour();
+      minu_gps  = gps.time.minute(); 
+      sec_gps = gps.time.second();
+      centsec_gps = gps.time.centisecond();
+      lat = gps.location.lat();
+      lon = gps.location.lng();
+      
+      displayInfoGPS();
+    }
+      
+  }
+  if (millis() > 5000 && gps.charsProcessed() < 10)
+  {
+    Serial.println(F("No GPS detected: check wiring."));
+    while(true);
+  }
+
+  
+}
+
+//
+void initGPS() {
+  Serial1.begin(GPSBaud); 
+  
+}
+
+void displayInfoGPS() {
+    oled.clearDisplay();			// limpia pantalla
+    oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
+    oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
+    oled.setTextSize(1);			// establece tamano de texto en 1
+    oled.print("Estado: "); 	// escribe en pantalla el texto
+    
+    oled.setCursor (71, 15);
+    oled.print(hora_gps);
+    oled.print(":");   
+    oled.print(minu_gps);
+    oled.print(":"); 
+    oled.print(sec_gps);  
+  
+    oled.setCursor (10, 30);		// ubica cursor en coordenas 10,30
+    oled.setTextSize(3);			// establece tamano de texto en 2
+    oled.print(sec_gps);		// escribe valor de millis() dividido por 1000
+    oled.print(" s");			// escribe texto
     oled.display();			// muestra en pantalla todo lo establecido anteriormente
 }
