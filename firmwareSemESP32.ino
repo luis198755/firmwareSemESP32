@@ -536,6 +536,36 @@ static const unsigned char PROGMEM gImage_LOGOTL[1030] = { /* 0X00,0X01,0X80,0X0
 
 
 // Librerías
+
+// -----------------------Librerías para WebServer--------------------
+#include <WiFi.h>
+#include <WebServer.h>
+
+// Replace with your network credentials
+const char* ssid = "NOC_TL";
+const char* password = "TRAFF1CNOC23";
+/*
+const char* ssid = "TINKERSROOM";
+const char* password = "SALATL2022";
+*/
+// Hardcoded login credentials (for demonstration only)
+const char* loginUsername = "admin";
+const char* loginPassword = "1234";
+
+WebServer server(80); // Object to handle HTTP requests
+
+String sessionToken; // Variable to store the session token
+// -----------------------Librerías para MQTT--------------------
+#include <PubSubClient.h>
+
+// MQTT Broker
+const char* mqtt_broker = "3.94.215.189";
+const char* topic = "sem/modo";
+const int mqtt_port = 1883;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+// -----------------------Librerías para Millis--------------------
 #include <esp_timer.h>
 // -----------------------Librerías microSD------------------------
 /*
@@ -575,9 +605,25 @@ RTC_DS3231 rtc;
 DateTime last_time;
 // -----------------------Librerías RTC----------------------------FIN
 // -----------------------Librerías GPS----------------------------
-#include <TinyGPSPlus.h>
+//#include <TinyGPSPlus.h>
+
+#include <TimeLib.h>
+#include <TinyGPS.h>       // http://arduiniana.org/libraries/TinyGPS/
+
 static const uint32_t GPSBaud = 9600;
-TinyGPSPlus gps;  // The TinyGPSPlus object
+//TinyGPSPlus gps;  // The TinyGPSPlus object
+TinyGPS gps; 
+
+const int offset = -6;
+
+// Ideally, it should be possible to learn the time zone
+// based on the GPS position data.  However, that would
+// require a complex library, probably incorporating some
+// sort of database using Eric Muller's time zone shape
+// maps, at http://efele.net/maps/tz/
+
+time_t prevDisplay = 0; // when the digital clock was displayed
+
 
 ///////////////////gps/////////////////////////
 int ano_gps;
@@ -773,8 +819,9 @@ int indice = 0;
 
 //////////////*Void Setup*/////////////
 void setup() {
+  sessionToken = generateToken();
   //Inicialización del puerto serial del mCU
-  Serial.begin(9600);
+  Serial.begin(115200);
   
   //////////////////////INICIALIZACIÓN DE HARDWARE/////////////////////////
   initReg(); // Inicializa Registros
@@ -787,12 +834,54 @@ void setup() {
   initGPS();  // GPS
 
   readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
+
+  /////////////////////Wifi-Server///////////////////////////////////////////
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to the WiFi network");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  // Define routes
+  server.on("/", HTTP_GET, handleLogin);
+  server.on("/login", HTTP_GET, handleLoginCheck);
+  server.on("/input", HTTP_GET, handleInput);
+  server.on("/submit", HTTP_GET, handleSubmit);
+  server.on("/logout", HTTP_GET, handleLogout); // Logout route
+
+  // Start server
+  server.begin();
+
+  // Set up MQTT
+  client.setServer(mqtt_broker, mqtt_port);
+  //////////////////////////////////////////////////////////////////////////
   
   delay(1000);
+
+  // Serial.print("Inicio");
 }
 /////////////*Void Loop*/////////////
 void loop() {
+  server.handleClient();
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  /*
+  // Your data to send, e.g., sensor reading
+  String data = "Hello MQTT";
+  sendData(data);
+  */
+
   // Declaración de variables locales
+ 
+
+  gps_p();
   
   // Lectura de Modo
   modofunc();
@@ -819,10 +908,11 @@ void modofunc(){
     if (lecturaBoton[i]==LOW && i==0 && estadoBoton[i] == LOW){
       modo = 0; // Aislado
       indice = 0;
-      Serial.println("Modo: Aislado");
+      //Serial.println("Modo: Aislado");
       //displayInfo("Aislado");
       estado = "Aislado";
       estadoBoton[i] = HIGH;
+      sendData(estado);
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==0){
@@ -832,12 +922,13 @@ void modofunc(){
     if (lecturaBoton[i]==LOW && i==1 && estadoBoton[i] == LOW){
       modo = 1; // Manual
       indice++;
-      Serial.println("Modo: Manual");
-      Serial.print("Indice: ");
+      //Serial.println("Modo: Manual");
+      //Serial.print("Indice: ");
       //displayInfo("Manual");
       estado = "Manual";
-      Serial.println(indice);
+      //Serial.println(indice);
       estadoBoton[i] = HIGH;
+      sendData(estado);
       previousTime = millisESP32 ();
       interfaceProg(*(prog00 + indice));
     }
@@ -848,10 +939,11 @@ void modofunc(){
     if (lecturaBoton[i]==LOW && i==2 && estadoBoton[i] == LOW){
       modo = 2; // Destello
       indice = 0;
-      Serial.println("Modo: Destello");
+      //Serial.println("Modo: Destello");
       //displayInfo("Destello");
       estado = "Destello";
       estadoBoton[i] = HIGH;
+      sendData(estado);
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==2){
@@ -865,6 +957,7 @@ void modofunc(){
       //displayInfo("Sicronizado");
       estado = "Sicronizado";
       estadoBoton[i] = HIGH;
+      sendData(estado);
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==3){
@@ -909,13 +1002,10 @@ void sincronizado(){
 }
 // Función de tiempo real
 void tiempoReal(unsigned long* time, unsigned long* prog, int longitud){
-  //Variable de tiempo actual del timer
   //Revisión de tiempo cumplido
   if ( (millisESP32 () - previousTime >= *(time + indice)) ){
     previousTime = millisESP32 ();
     
-    //digitalWrite (LED_PIN, !digitalRead (LED_PIN));
-
     // Incrementar el índice en uno
     indice++;
     
@@ -927,11 +1017,25 @@ void tiempoReal(unsigned long* time, unsigned long* prog, int longitud){
         // Ejecución de la Programación
         interfaceProg(*(prog + indice));
     }
+    /*Serial.print("Indice: ");
+    Serial.println(indice);*/
+  }
+}
+// Función de ejecución de proceso cada 1 s
+void timeProc01() {
+  DateTime now = rtc.now();
 
-    
+  // Check if one second has passed
+  if ((now.unixtime() - last_time.unixtime()) >= 1) {
+    // Print message if time is up
+    //Serial.println("Time's up!");
+    digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
-    Serial.print("Indice: ");
-    Serial.println(indice);
+    readGPS();
+    //readRTC();
+
+    // Update the last_time variable
+    last_time = now;
   }
 }
 // Returns the number of milliseconds passed since the ESP32 chip was powered on or reset
@@ -1045,47 +1149,42 @@ void initRTC() {
   // Print initialization message
   Serial.println("Inicio");
 }
-// Función de ejecución de proceso cada 1 s
-void timeProc01() {
-  DateTime now = rtc.now();
 
-  // Check if one second has passed
-  if ((now.unixtime() - last_time.unixtime()) >= 1) {
-    // Print message if time is up
-    //Serial.println("Time's up!");
-    digitalWrite (LED_PIN, !digitalRead (LED_PIN));
-
-    readGPS();
-
-    // Update the last_time variable
-    last_time = now;
-  }
-}
 // Función de lectura de info de GPS
 void readGPS() {
 
   // This sketch displays information every time a new sentence is correctly encoded.
-  while (Serial1.available() > 0){
-    if (gps.encode(Serial1.read())) {
-      ano_gps = gps.date.year();
-      mes_gps = gps.date.month();
-      dia_gps = gps.date.day();
-      hora_gps = gps.time.hour();
-      minu_gps  = gps.time.minute(); 
-      sec_gps = gps.time.second();
-      centsec_gps = gps.time.centisecond();
-      lat = gps.location.lat();
-      lon = gps.location.lng();
+  //while (Serial1.available() > 0){
+   //if (gps.encode(Serial1.read())) {
+      // ano_gps = gps.date.year();
+      // mes_gps = gps.date.month();
+      // dia_gps = gps.date.day();
+      // hora_gps = gps.time.hour();
+      // minu_gps  = gps.time.minute(); 
+      // sec_gps = gps.time.second();
+      // centsec_gps = gps.time.centisecond();
+      // lat = gps.location.lat();
+      // lon = gps.location.lng();
+
+      // ano_gps = year();
+      // mes_gps = month();
+      // dia_gps = day();
+      // hora_gps = hour();
+      // minu_gps  = minute(); 
+      // sec_gps = second();
+      // //centsec_gps = gps.time.centisecond();
+      // lat = 0;//lat();
+      // lon = 0;//gps.location.lng();
       
-      displayInfoGPS();
-    }
+      //displayInfoGPS();
+    //}
       
-  }
-  if (millis() > 5000 && gps.charsProcessed() < 10)
-  {
-    Serial.println(F("No GPS detected: check wiring."));
-    while(true);
-  }
+  //}
+  
+}
+
+// Función de lectura de info de GPS
+void readRTC() {
 
   
 }
@@ -1104,16 +1203,23 @@ void displayInfoGPS() {
     oled.print("Modo: "); 	// escribe en pantalla el texto
     oled.print(estado);
     
-    oled.setCursor (71, 15);
-    oled.print(hora_gps);
+    oled.setCursor (0, 15);
+    oled.print(day());
+    oled.print("/");
+    oled.print(month());
+    oled.print("/");
+    oled.print(year()); 
+    oled.setCursor (0, 25);
+    oled.print("GPS:");
+    oled.print(hour());
     oled.print(":");   
-    oled.print(minu_gps);
+    oled.print(minute());
     oled.print(":"); 
-    oled.print(sec_gps);  
-  
-    oled.setCursor (10, 30);		// ubica cursor en coordenas 10,30
+    oled.print(second());  
+      
+    oled.setCursor (10, 44);		// ubica cursor en coordenas 10,30
     oled.setTextSize(3);			// establece tamano de texto en 2
-    oled.print(sec_gps);		// escribe valor de millis() dividido por 1000
+    oled.print(second());		// escribe valor de millis() dividido por 1000
     oled.print(" s");			// escribe texto
     oled.display();			// muestra en pantalla todo lo establecido anteriormente
 }
@@ -1206,7 +1312,7 @@ void readFile(fs::FS &fs, const char * path){
     rows = progLength(SD, "/prog.txt");
     unsigned long matrix [rows] [2]; // to store the matrix, change the size as needed
 
-    Serial.printf("Reading file: %s\n", path);
+    //Serial.printf("Reading file: %s\n", path);
 
     File file = fs.open(path);
     if(!file){
@@ -1214,7 +1320,7 @@ void readFile(fs::FS &fs, const char * path){
         return;
     }
 
-    Serial.println("Read from file: ");
+    //Serial.println("Read from file: ");
 
     while(file.available()){
       //Serial.write(file.read());
@@ -1237,18 +1343,18 @@ void readFile(fs::FS &fs, const char * path){
     
     file.close();
 
-    Serial.println("Imprimiendo matriz:");
+    //Serial.println("Imprimiendo matriz:");
     // // print the matrix for debugging
     for (int i = 0; i < rows; i++) {
-      Serial.print(i);
-      Serial.print(" - ");
+      //Serial.print(i);
+      //Serial.print(" - ");
       for (int j = 0; j < 2; j++) {
         
-        Serial.print (matrix [i] [j], DEC); // print the matrix element in decimal format
+        //Serial.print (matrix [i] [j], DEC); // print the matrix element in decimal format
         showOLED(matrix [i] [j]);
-        Serial.print (" ");
+        //Serial.print (" ");
       }
-      Serial.println ();
+      //Serial.println ();
     }
 }
 
@@ -1289,4 +1395,180 @@ void showOLED(unsigned long mensaje) {
 
   oled.display();			// muestra en pantalla todo lo establecido anteriormente
 
+}
+
+void digitalClockDisplay(){
+  // digital clock display of the time
+  Serial.print(hour());
+  printDigits(minute());
+  printDigits(second());
+  Serial.print(" ");
+  Serial.print(day());
+  Serial.print(" ");
+  Serial.print(month());
+  Serial.print(" ");
+  Serial.print(year()); 
+  Serial.println(); 
+}
+
+void printDigits(int digits) {
+  // utility function for digital clock display: prints preceding colon and leading 0
+  Serial.print(":");
+  if(digits < 10)
+    Serial.print('0');
+  Serial.print(digits);
+}
+
+void gps_p() {
+
+  while (Serial1.available()) {
+    if (gps.encode(Serial1.read())) { // process gps messages
+      // when TinyGPS reports new data...
+      unsigned long age;
+      int Year;
+      byte Month, Day, Hour, Minute, Second;
+      gps.crack_datetime(&Year, &Month, &Day, &Hour, &Minute, &Second, NULL, &age);
+      if (age < 500) {
+        // set the Time to the latest GPS reading
+        setTime(Hour, Minute, Second, Day, Month, Year);
+        adjustTime(offset * SECS_PER_HOUR);
+      }
+    }
+  }
+  if (timeStatus()!= timeNotSet) {
+    if (now() != prevDisplay) { //update the display only if the time has changed
+      prevDisplay = now();
+      //digitalClockDisplay();  
+      displayInfoGPS();
+    }
+  }
+}
+///////////////////////////////Server////////////////////////////////////////
+String generateToken() {
+  String token = "";
+  for (int i = 0; i < 16; ++i) {
+    int randomType = random(0, 3); // Randomly choose between 3 types (number, uppercase, lowercase)
+    char c;
+
+    if (randomType == 0) {
+      // Generate a number (0-9)
+      c = (char)random(48, 58);
+    } else if (randomType == 1) {
+      // Generate an uppercase letter (A-Z)
+      c = (char)random(65, 91);
+    } else {
+      // Generate a lowercase letter (a-z)
+      c = (char)random(97, 123);
+    }
+
+    token += c;
+  }
+  return token;
+}
+
+void handleLogin() {
+  File file = SD.open("/web/index.html"); // Ensure the file exists on the SD card
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    server.send(500, "text/plain", "Failed to load page");
+    return;
+  }
+
+  String htmlContent;
+  while (file.available()) {
+    htmlContent += (char)file.read();
+  }
+  file.close();
+
+  server.send(200, "text/html", htmlContent);
+}
+
+void handleLoginCheck() {
+  if (server.hasArg("username") && server.hasArg("password")) {
+    if (server.arg("username") == loginUsername && server.arg("password") == loginPassword) {
+      sessionToken = generateToken();
+      server.sendHeader("Location", "/input?token=" + sessionToken);
+      server.send(303);
+    } else {
+      server.send(401, "text/plain", "Unauthorized: Invalid credentials");
+    }
+  } else {
+    server.send(400, "text/plain", "400: Invalid Request");
+  }
+}
+
+void handleInput() {
+  if (!server.hasArg("token") || server.arg("token") != sessionToken) {
+    server.send(401, "text/plain", "Unauthorized");
+    return;
+  }
+  
+  File file = SD.open("/web/input.html"); // Ensure the file exists on the SD card
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    server.send(500, "text/plain", "Failed to load page");
+    return;
+  }
+
+  String htmlContent;
+  while (file.available()) {
+    htmlContent += (char)file.read();
+  }
+  file.close();
+
+  server.send(200, "text/html", htmlContent);
+}
+
+void handleLogout() {
+  sessionToken = generateToken(); // Clear the session token
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleSubmit() {
+  // Retrieve GET parameters
+  if (server.hasArg("num1") && server.hasArg("num2")) {
+    unsigned long num1 = strtoul(server.arg("num1").c_str(), NULL, 10);
+    unsigned long num2 = strtoul(server.arg("num2").c_str(), NULL, 10);
+
+    // Do something with num1 and num2
+    Serial.print("Number 1: ");
+    Serial.println(num1);
+    Serial.print("Number 2: ");
+    Serial.println(num2);
+
+    // Redirect back to form
+    server.sendHeader("Location", "/input?token="+sessionToken);
+    server.send(303);
+  } else {
+    // If one of the parameters is missing, display an error
+    server.send(400, "text/plain", "400: Invalid Request");
+  }
+}
+
+//////////////////////////////////QTT/////////////////////////////////
+void reconnect() {
+  // Loop until reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect("ESP32Client2")) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+void sendData(String data) {
+  if (client.publish(topic, data.c_str())) {
+    Serial.println("Publish ok");
+  }
+  else {
+    Serial.println("Publish failed");
+  }
 }
