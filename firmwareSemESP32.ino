@@ -542,8 +542,10 @@ static const unsigned char PROGMEM gImage_LOGOTL[1030] = { /* 0X00,0X01,0X80,0X0
 #include <WebServer.h>
 
 // Replace with your network credentials
+
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
+
 /*
 const char* ssid = "TINKERSROOM";
 const char* password = "SALATL2022";
@@ -1552,7 +1554,7 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect("ESP32Client2")) {
+    if (client.connect("ESP32Client")) {
       Serial.println("connected");
     } else {
       Serial.print("failed, rc=");
