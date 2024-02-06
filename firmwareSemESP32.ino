@@ -965,7 +965,7 @@ void modofunc(){
     if (lecturaBoton[i]==LOW && i==3 && estadoBoton[i] == LOW){
       modo = 3; // Sicronizado
       indice = 0;
-      Serial.println("Modo: Sicronizado");
+      //Serial.println("Modo: Sicronizado");
       //displayInfo("Sicronizado");
       estado = "Sicronizado";
       estadoBoton[i] = HIGH;
@@ -1549,6 +1549,8 @@ void handleSubmit() {
     Serial.print("Number 2: ");
     Serial.println(num2);
 
+    Serial.println("Core #"+String(xPortGetCoreID()));
+
     // Redirect back to form
     server.sendHeader("Location", "/input?token="+sessionToken);
     server.send(303);
@@ -1566,6 +1568,7 @@ void reconnect() {
     // Attempt to connect
     if (client.connect("ESP32Client")) {
       Serial.println("connected");
+      Serial.println("Core #"+String(xPortGetCoreID()));
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -1579,6 +1582,7 @@ void reconnect() {
 void sendData(String data) {
   if (client.publish(topic, data.c_str())) {
     Serial.println("Publish ok");
+    Serial.println("Core #"+String(xPortGetCoreID()));
   }
   else {
     Serial.println("Publish failed");
