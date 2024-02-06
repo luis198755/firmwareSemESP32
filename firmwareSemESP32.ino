@@ -818,7 +818,41 @@ unsigned long EscOff  = 0b00000000000000000000000000000000; // Todo Encendido
 
 // Declarar una variable para almacenar el índice del arreglo
 int indice = 0;
+////////////////////////////////////////////////////
+void webServerTask(void * parameter) {
+  setupServer();
+  // Set up MQTT
+  client.setServer(mqtt_broker, mqtt_port);
 
+  for(;;) {
+    
+    server.handleClient(); // Handle client requests
+
+    if (!client.connected()) {
+      reconnect();
+    }
+    client.loop();
+    
+    vTaskDelay(1); // Delay for 1 tick period
+    //delay(10); // Yield to the ESP32
+  }
+}
+void setupServer() {
+  /*
+    server.on("/", []() {
+        server.send(200, "text/plain", "Hello World");
+    });*/
+// Define routes
+  server.on("/", HTTP_GET, handleLogin);
+  server.on("/login", HTTP_GET, handleLoginCheck);
+  server.on("/input", HTTP_GET, handleInput);
+  server.on("/submit", HTTP_GET, handleSubmit);
+  server.on("/logout", HTTP_GET, handleLogout); // Logout route
+
+  // Start server
+  server.begin();
+  Serial.println("HTTP server started");
+}
 //////////////*Void Setup*/////////////
 void setup() {
   sessionToken = generateToken();
@@ -848,41 +882,17 @@ void setup() {
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
 
-  // Define routes
-  server.on("/", HTTP_GET, handleLogin);
-  server.on("/login", HTTP_GET, handleLoginCheck);
-  server.on("/input", HTTP_GET, handleInput);
-  server.on("/submit", HTTP_GET, handleSubmit);
-  server.on("/logout", HTTP_GET, handleLogout); // Logout route
+  // Definición de tarea en Core 0
+  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 1
 
-  // Start server
-  server.begin();
-
-  // Set up MQTT
-  client.setServer(mqtt_broker, mqtt_port);
   //////////////////////////////////////////////////////////////////////////
   
   delay(1000);
-
-  // Serial.print("Inicio");
 }
 /////////////*Void Loop*/////////////
 void loop() {
-  server.handleClient();
-
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-  /*
-  // Your data to send, e.g., sensor reading
-  String data = "Hello MQTT";
-  sendData(data);
-  */
-
   // Declaración de variables locales
  
-
   gps_p();
   
   // Lectura de Modo
