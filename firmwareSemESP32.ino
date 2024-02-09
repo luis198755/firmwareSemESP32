@@ -542,20 +542,21 @@ String id = "tl0001";
 StaticJsonDocument<1024> doc; // Adjust size according to your needs 
 // -----------------------Librerías para WebServer--------------------
 // -----------------------WifiManager---------------------------------
-//#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
-
+#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
+//WiFiManager, Local intialization. Once its business is done, there is no need to keep it around
+    WiFiManager wm;
 // -------------------------------------------------------------------
 #include <WiFi.h>
 #include <WebServer.h>
-
+int timeout = 120; // seconds to run for
 // Replace with your network credentials
 /*
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
 */
 
-const char* ssid = "TINKERSROOM";
-const char* password = "SALATL2022";
+//const char* ssid = "TINKERSROOM";
+//const char* password = "SALATL2022";
 
 // Hardcoded login credentials (for demonstration only)
 const char* loginUsername = "admin";
@@ -883,13 +884,22 @@ void webServerTask(void * parameter) {
 
   for(;;) {
     unsigned long currentMillis = millis(); // Get the current time
-    getDeviceStatus();
-    server.handleClient(); // Handle client requests
-
-    if (!client.connected()) {
+    
+    wl_status_t status = WiFi.status();
+    if(status == WL_CONNECTED) {
+      //Serial.println("WiFi Connected");
+      if (!client.connected()) {
       reconnect();
     }
     client.loop();
+    server.handleClient(); // Handle client requests
+    } else {
+      //Serial.println("WiFi Not Connected");
+    }
+
+    getDeviceStatus();
+    
+
 
     if (currentMillis - previousMillis >= interval) { // If interval is exceeded
       previousMillis = currentMillis; // Save the current time
@@ -1138,7 +1148,31 @@ void setup() {
 /////////////*Void Loop*/////////////
 void loop() {
   // Declaración de variables locales
-  
+  /*
+  ///////////////////*******************
+    if ( digitalRead(botonEntrada[3]) == LOW) {
+      WiFiManager wm;    
+
+      //reset settings - for testing
+      //wm.resetSettings();
+    
+      // set configportal timeout
+      wm.setConfigPortalTimeout(timeout);
+
+      if (!wm.startConfigPortal("OnDemandAP")) {
+        Serial.println("failed to connect and hit timeout");
+        delay(3000);
+        //reset and try again, or maybe put it to deep sleep
+        ESP.restart();
+        delay(5000);
+      }
+
+      //if you get here you have connected to the WiFi
+      Serial.println("connected...yeey :)");
+
+    }
+    ///////////////////*******************
+    */
   //gps_p();
   
   // Lectura de Modo
@@ -1149,6 +1183,7 @@ void loop() {
 }
 //////////////////////*Funciones*/////////////////////////
 void initWifi() {
+  /*
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
   WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
@@ -1162,6 +1197,40 @@ void initWifi() {
   //Serial.print("IP Address: ");
   //Serial.println(WiFi.localIP());
   displayInfo("IP: " + WiFi.localIP().toString());
+
+  */
+  
+  
+
+    // reset settings - wipe stored credentials for testing
+    // these are stored by the esp library
+    //wm.resetSettings();
+
+    // Automatically connect using saved credentials,
+    // if connection fails, it starts an access point with the specified name ( "AutoConnectAP"),
+    // if empty will auto generate SSID, if password is blank it will be anonymous AP (wm.autoConnect())
+    // then goes into a blocking loop awaiting configuration and will return success result
+    displayInfo("Conectando Wifi ...");
+    bool res;
+    // res = wm.autoConnect(); // auto generated AP name from chipid
+    // res = wm.autoConnect("AutoConnectAP"); // anonymous ap
+    res = wm.autoConnect("AutoConnectAP","password"); // password protected ap
+
+    if(!res) {
+        Serial.println("Failed to connect");
+        // ESP.restart();
+    } 
+    else {
+        //if you get here you have connected to the WiFi    
+        //Serial.println("connected...yeey :)");
+        displayInfo("IP: " + WiFi.localIP().toString());
+    }
+    
+    /*
+    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP  
+    Serial.println("\n Starting");
+    //pinMode(TRIGGER_PIN, INPUT_PULLUP);
+    */
   delay(3000);
 }
 // Función de interface 32 a 8 bits - en base a variables
@@ -1223,7 +1292,7 @@ void modofunc(){
     else if (lecturaBoton[i]==HIGH && i==2){
       estadoBoton[i] = LOW;
     }
-
+    
     if (lecturaBoton[i]==LOW && i==3 && estadoBoton[i] == LOW){
       modo = 3; // Sicronizado
       indice = 0;
@@ -1232,27 +1301,15 @@ void modofunc(){
       estado = "Sicronizado";
       estadoBoton[i] = HIGH;
       //sendData(estado);
-      rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
-      /*
-      Serial.print(year());
-      Serial.print('/');
-      Serial.print(month());
-      Serial.print('/');
-      Serial.print(day());
-      Serial.print(" ");
-      Serial.print(hour());
-      Serial.print(':');
-      Serial.print(minute());
-      Serial.print(':');
-      Serial.print(second());
-      Serial.println();
-      */
+      //rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
+      wm.resetSettings();
+      ESP.restart();
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==3){
       estadoBoton[i] = LOW;
     }
-   
+    
    
   }
   // Modos de funcionamiento
