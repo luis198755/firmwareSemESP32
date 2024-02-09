@@ -536,20 +536,27 @@ static const unsigned char PROGMEM gImage_LOGOTL[1030] = { /* 0X00,0X01,0X80,0X0
 
 
 // Librerías
-
+#include <ArduinoJson.h>
+String id = "tl0001";
+// Create a JSON object
+StaticJsonDocument<1024> doc; // Adjust size according to your needs 
 // -----------------------Librerías para WebServer--------------------
+// -----------------------WifiManager---------------------------------
+//#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
+
+// -------------------------------------------------------------------
 #include <WiFi.h>
 #include <WebServer.h>
 
 // Replace with your network credentials
-
+/*
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
+*/
 
-/*
 const char* ssid = "TINKERSROOM";
 const char* password = "SALATL2022";
-*/
+
 // Hardcoded login credentials (for demonstration only)
 const char* loginUsername = "admin";
 const char* loginPassword = "1234";
@@ -588,6 +595,8 @@ PubSubClient client(espClient);
 #include "SD.h"
 #include "SPI.h"
 #include <stdlib.h>
+File myFile;
+
 // -----------------------Librerías I2C----------------------------
 #include <Wire.h>			          // libreria para bus I2C
 // -----------------------Librerías OLED----------------------------
@@ -604,7 +613,13 @@ Adafruit_SSD1306 oled(ANCHO, ALTO, &Wire, OLED_RESET);	// crea objeto
 // -----------------------Librerías RTC----------------------------
 #include "RTClib.h"
 RTC_DS3231 rtc;
-DateTime last_time;
+unsigned long currentTime;
+//DateTime last_time;
+int setClock = 0;
+int rtcHour = 0;
+int rtcMinute = 0;
+int rtcSecond = 0;
+float temperatureRTC = 0;
 // -----------------------Librerías RTC----------------------------FIN
 // -----------------------Librerías GPS----------------------------
 //#include <TinyGPSPlus.h>
@@ -628,16 +643,17 @@ time_t prevDisplay = 0; // when the digital clock was displayed
 
 
 ///////////////////gps/////////////////////////
-int ano_gps;
-int mes_gps;
-int dia_gps;
-int hora_gps;
-int minu_gps; 
-int sec_gps;
+int gpsDay = 0;
+int gpsMonth = 0;
+int gpsYear = 0;
+int gpsHour = 0;
+int gpsMinute = 0;
+int gpsSecond = 0;
+
 unsigned int centsec_gps;
 
-double lat;
-double lon;
+float latitude, longitude, altitude;
+int satellites;
 // -----------------------Librerías GPS----------------------------FIN
 
 ////*Definición de pines de McU para control de registros*///
@@ -815,27 +831,201 @@ int longitud1 = sizeof(prog1) / sizeof(prog1[0]);
 unsigned long EscOn   = 0b11111111111111111111111111111111; // Todo Apagado
 unsigned long EscOff  = 0b00000000000000000000000000000000; // Todo Encendido
 ///////////////////////////////////*FIN Programación*//////////////////////////////////////////
+//////////////////////////////////*ConfigProg*////////////////////////////////////////////////
+unsigned long firstColumn[8]; // Array for the first column
+int matrix[8][8]; // 8x8 matrix for the remaining columns
+
+
+unsigned long escnArray1[] = {4294967295, 4294967295, 4294967295, 4294967295, 4294967295, 4294967295, 4294967295, 4294967295};
+  int sizeEscn = sizeof(escnArray1)/sizeof(escnArray1[0]);
+
+       // Define the array
+  int eventArray1[] = {12, 0, 1, 1};
+  int eventArray2[] = {12, 30, 2, 1};
+  int eventArray3[] = {12, 45, 2, 1};
+  int eventArray4[] = {0, 0, 0, 0};
+  int eventArray5[] = {0, 0, 0, 0};
+  int eventArray6[] = {0, 0, 0, 0};
+  int eventArray7[] = {0, 0, 0, 0};
+  int eventArray8[] = {0, 0, 0, 0};
+  int sizeEvent = sizeof(eventArray1)/sizeof(eventArray1[0]);
+    
+  int cycleArray1[] = {70, 25, 25, 0, 0, 0, 0, 0};
+  int cycleArray2[] = {70, 20, 30, 0, 0, 0, 0, 0};
+  int cycleArray3[] = {70, 20, 30, 0, 0, 0, 0, 0};
+  int cycleArray4[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int cycleArray5[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int cycleArray6[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int cycleArray7[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int cycleArray8[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int sizeCycle = sizeof(cycleArray1)/sizeof(cycleArray1[0]);
+
+  int sincroArray1[] = {70, 0, 0, 0, 0, 0, 0, 0, 0};
+  int sizeSincro = sizeof(sincroArray1)/sizeof(sincroArray1[0]);
+
+//////////////////////////////////*FIN ConfigProg*////////////////////////////////////////////////
+
 
 // Declarar una variable para almacenar el índice del arreglo
 int indice = 0;
+
+long rssi = 0;
+long txPower = 0;
+
 ////////////////////////////////////////////////////
+unsigned long previousMillis = 0; // Stores the last time LED was updated
+const long interval = 10000; // Interval at which to blink (milliseconds)
 void webServerTask(void * parameter) {
   setupServer();
   // Set up MQTT
   client.setServer(mqtt_broker, mqtt_port);
+  client.setBufferSize(1024);
 
   for(;;) {
-    
+    unsigned long currentMillis = millis(); // Get the current time
+    getDeviceStatus();
     server.handleClient(); // Handle client requests
 
     if (!client.connected()) {
       reconnect();
     }
     client.loop();
+
+    if (currentMillis - previousMillis >= interval) { // If interval is exceeded
+      previousMillis = currentMillis; // Save the current time
+
+      digitalWrite (LED_PIN, !digitalRead (LED_PIN));
+
+      jsonStatus();
+    }
+
+    gps_p();
     
-    vTaskDelay(1); // Delay for 1 tick period
+    
+    //vTaskDelay(1); // Delay for 1 tick period
     //delay(10); // Yield to the ESP32
   }
+}
+void jsonStatus () {
+
+    // Populate the document
+      doc["id"] = id;
+
+      // Nested "RTC" object
+      JsonObject rtc = doc.createNestedObject("RTC");
+      rtc["timestamp"] = currentTime;
+      rtc["temperature"] = temperatureRTC;
+
+      // Nested "GPS" object
+      JsonObject gps = doc.createNestedObject("GPS");
+      gps["latitude"] = latitude;
+      gps["logitude"] = longitude;
+      gps["altitude"] = altitude;
+      gps["satellites"] = satellites;
+
+      // Nested "Ctrl" object
+      JsonObject ctrl = doc.createNestedObject("Ctrl");
+      ctrl["estado"] = estado;
+
+      JsonObject escenarios = ctrl.createNestedObject("escenarios");
+      JsonArray escenarios1 = escenarios.createNestedArray("1");
+      for(int i = 0; i < sizeEscn; i++) {
+        escenarios1.add(firstColumn[i]);
+      }
+
+      JsonObject eventos = ctrl.createNestedObject("eventos");
+      JsonArray eventos1 = eventos.createNestedArray("1");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos1.add(eventArray1[i]);
+      }
+      JsonArray eventos2 = eventos.createNestedArray("2");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos2.add(eventArray2[i]);
+      }
+      JsonArray eventos3 = eventos.createNestedArray("3");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos3.add(eventArray3[i]);
+      }
+      JsonArray eventos4 = eventos.createNestedArray("4");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos4.add(eventArray4[i]);
+      }
+      JsonArray eventos5 = eventos.createNestedArray("5");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos5.add(eventArray5[i]);
+      }
+      JsonArray eventos6 = eventos.createNestedArray("6");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos6.add(eventArray6[i]);
+      }
+      JsonArray eventos7 = eventos.createNestedArray("7");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos7.add(eventArray7[i]);
+      }
+      JsonArray eventos8 = eventos.createNestedArray("8");
+      for(int i = 0; i < sizeEvent; i++) {
+        eventos8.add(eventArray8[i]);
+      }
+
+
+      JsonObject ciclos = ctrl.createNestedObject("ciclos");
+      JsonArray ciclos1 = ciclos.createNestedArray("1");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos1.add(matrix[i][0]);
+      }
+      JsonArray ciclos2 = ciclos.createNestedArray("2");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos2.add(matrix[i][1]);
+      }
+      JsonArray ciclos3 = ciclos.createNestedArray("3");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos3.add(matrix[i][2]);
+      }
+      JsonArray ciclos4 = ciclos.createNestedArray("4");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos4.add(matrix[i][3]);
+      }
+      JsonArray ciclos5 = ciclos.createNestedArray("5");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos5.add(matrix[i][4]);
+      }
+      JsonArray ciclos6 = ciclos.createNestedArray("6");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos6.add(matrix[i][5]);
+      }
+      JsonArray ciclos7 = ciclos.createNestedArray("7");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos7.add(matrix[i][6]);
+      }
+      JsonArray ciclos8 = ciclos.createNestedArray("8");
+      for(int i = 0; i < sizeCycle; i++) {
+        ciclos8.add(matrix[i][7]);
+      }
+
+      JsonObject sincronias = ctrl.createNestedObject("sincronias");
+      JsonArray sincronias1 = sincronias.createNestedArray("1");
+      for(int i = 0; i < sizeSincro; i++) {
+        sincronias1.add(sincroArray1[i]);
+      }
+      // Nested "Wifi" object
+      JsonObject wifi = doc.createNestedObject("Wifi");
+      wifi["rssi"] = rssi;
+      wifi["txPower"] = txPower;
+
+      // Serialize the JSON object to a string
+      String output;
+      serializeJson(doc, output);
+      sendData(output);
+
+      /*
+      Serial.print("ID: ");
+      Serial.println(doc["id"].as<String>());
+      */
+}
+void getDeviceStatus () {
+  rssi = WiFi.RSSI();
+  txPower = WiFi.getTxPower();
+  temperatureRTC = rtc.getTemperature();
 }
 void setupServer() {
   /*
@@ -869,19 +1059,75 @@ void setup() {
   initRTC();  // Reloj de Tiempo Real
   initGPS();  // GPS
 
+  initWifi(); //Wifi
+
   readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
 
-  /////////////////////Wifi-Server///////////////////////////////////////////
-  // Connect to Wi-Fi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
-  }
-  Serial.println("Connected to the WiFi network");
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.localIP());
+  myFile = SD.open("/config/ctrl.conf", FILE_READ);
+  if (myFile) {
+    Serial.println("ctrl.conf:");
+    
+    /*
+    int i = 0; // Row counter for the matrix
+    while (myFile.available() && i < 8) {
+      String line = myFile.readStringUntil('\n');
+      int sepPos = line.indexOf(',');
+      
+      unsigned long firstValue = strtoul(line.substring(0, sepPos).c_str(), NULL, 10);
+      unsigned long secondValue = strtoul(line.substring(sepPos + 1).c_str(), NULL, 10);
 
+      
+      matrix[i][0] = firstValue;
+      matrix[i][1] = secondValue;
+      
+      Serial.print("Read: ");
+      Serial.print(matrix[i][0]);
+      Serial.print(",");
+      Serial.println(matrix[i][1]);
+      
+      i++;
+    }
+    myFile.close();
+    */
+    int row = 0; // Row counter
+    while (myFile.available() && row < 8) {
+      String line = myFile.readStringUntil('\n');
+      int startPos = 0;
+      int sepPos = line.indexOf(',', startPos);
+
+      // Parse and store the first column
+      unsigned long firstValue = strtoul(line.substring(startPos, sepPos).c_str(), NULL, 10);
+      firstColumn[row] = firstValue;
+      
+      // Parse and store the remaining columns
+      for (int col = 0; col < 8; col++) {
+        startPos = sepPos + 1;
+        sepPos = line.indexOf(',', startPos);
+        if (sepPos == -1) sepPos = line.length(); // Handle the last value
+        int value = line.substring(startPos, sepPos).toInt();
+        matrix[row][col] = value;
+      }
+      
+      Serial.print("Row ");
+      Serial.print(row);
+      Serial.print(": First Column = ");
+      Serial.print(firstColumn[row]);
+      Serial.print(", Other Columns = ");
+      for (int col = 0; col < 8; col++) {
+        Serial.print(matrix[row][col]);
+        Serial.print(" ");
+      }
+      Serial.println();
+      
+      row++;
+    }
+    myFile.close();
+  } else {
+    Serial.println("error opening ctrl.conf");
+  }
+
+
+  
   // Definición de tarea en Core 0
   xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 1
 
@@ -892,16 +1138,32 @@ void setup() {
 /////////////*Void Loop*/////////////
 void loop() {
   // Declaración de variables locales
- 
-  gps_p();
+  
+  //gps_p();
   
   // Lectura de Modo
   modofunc();
 
-  timeProc01(); 
+  //timeProc01(); 
 
 }
 //////////////////////*Funciones*/////////////////////////
+void initWifi() {
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    //Serial.println("Connecting to WiFi...");
+    displayInfo("Conectando Wifi ...");
+  }
+  //Serial.println("Connected to the WiFi network");
+  //Serial.print("IP Address: ");
+  //Serial.println(WiFi.localIP());
+  displayInfo("IP: " + WiFi.localIP().toString());
+  delay(3000);
+}
 // Función de interface 32 a 8 bits - en base a variables
 void interfaceProg(unsigned long var32Bits) {
     unsigned char var1 = (var32Bits & 0xFF) ^ 0xFF;
@@ -924,7 +1186,7 @@ void modofunc(){
       //displayInfo("Aislado");
       estado = "Aislado";
       estadoBoton[i] = HIGH;
-      sendData(estado);
+      //sendData(estado);
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==0){
@@ -940,7 +1202,7 @@ void modofunc(){
       estado = "Manual";
       //Serial.println(indice);
       estadoBoton[i] = HIGH;
-      sendData(estado);
+      //sendData(estado);
       previousTime = millisESP32 ();
       interfaceProg(*(prog00 + indice));
     }
@@ -955,7 +1217,7 @@ void modofunc(){
       //displayInfo("Destello");
       estado = "Destello";
       estadoBoton[i] = HIGH;
-      sendData(estado);
+      //sendData(estado);
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==2){
@@ -969,7 +1231,22 @@ void modofunc(){
       //displayInfo("Sicronizado");
       estado = "Sicronizado";
       estadoBoton[i] = HIGH;
-      sendData(estado);
+      //sendData(estado);
+      rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
+      /*
+      Serial.print(year());
+      Serial.print('/');
+      Serial.print(month());
+      Serial.print('/');
+      Serial.print(day());
+      Serial.print(" ");
+      Serial.print(hour());
+      Serial.print(':');
+      Serial.print(minute());
+      Serial.print(':');
+      Serial.print(second());
+      Serial.println();
+      */
       previousTime = millisESP32 ();
     }
     else if (lecturaBoton[i]==HIGH && i==3){
@@ -1034,6 +1311,7 @@ void tiempoReal(unsigned long* time, unsigned long* prog, int longitud){
   }
 }
 // Función de ejecución de proceso cada 1 s
+/*
 void timeProc01() {
   DateTime now = rtc.now();
 
@@ -1043,13 +1321,13 @@ void timeProc01() {
     //Serial.println("Time's up!");
     digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
-    readGPS();
+    //readGPS();
     //readRTC();
 
     // Update the last_time variable
     last_time = now;
   }
-}
+}*/
 // Returns the number of milliseconds passed since the ESP32 chip was powered on or reset
 unsigned long long millisESP32 () {
   return (unsigned long long) (esp_timer_get_time () / 1000ULL);
@@ -1131,9 +1409,7 @@ void displayInfo(String modo) {
     oled.clearDisplay();			// limpia pantalla
     oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
     oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
-    oled.setTextSize(2);			// establece tamano de texto en 1
-    oled.print("Modo: "); 	// escribe en pantalla el texto
-    oled.setCursor(0, 16);
+    oled.setTextSize(1);			// establece tamano de texto en 1
     oled.print(modo); 	// escribe en pantalla el texto
     oled.display();			// muestra en pantalla todo lo establecido anteriormente
 }
@@ -1150,13 +1426,17 @@ void initRTC() {
       // following line sets the RTC to the date & time this sketch was compiled
       // Set the RTC to the date & time this sketch was compiled
       rtc.adjust(DateTime(__DATE__, __TIME__));
+      //rtc.adjust(DateTime(year(), month(), day(), hour(), minute(), second()));
       // This line sets the RTC with an explicit date & time, for example to set
       // January 21, 2014 at 3am you would call:
       //rtc.adjust(DateTime(2023, 2, 14, 9, 37, 0));
+      
   }
   
   // Store the current time
-  last_time = rtc.now();
+  //last_time = rtc.now();
+  DateTime now = rtc.now();
+
 
   // Print initialization message
   Serial.println("Inicio");
@@ -1196,18 +1476,45 @@ void readGPS() {
 }
 
 // Función de lectura de info de GPS
+/*
 void readRTC() {
-
+  Serial.print(now.year(), DEC);
+  Serial.print('/');
+  Serial.print(now.month(), DEC);
+  Serial.print('/');
+  Serial.print(now.day(), DEC);
+  Serial.print(" ");
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println();
   
-}
+}*/
 
 // Función de Inicialización de GPS
 void initGPS() {
   Serial1.begin(GPSBaud); 
   
 }
+void getTime () {
+  DateTime now = rtc.now();
+  currentTime = now.unixtime();
+  gpsSecond = second();
+  gpsDay = day();
+  gpsMonth = month();
+  gpsYear = year();
+  gpsHour = hour();
+  gpsMinute = minute();
+
+  rtcHour = now.hour();
+  rtcMinute = now.minute();
+  rtcSecond = now.second();
+}
 // Función que muestra hora y fecha en OLED
 void displayInfoGPS() {
+    
     oled.clearDisplay();			// limpia pantalla
     oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
     oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
@@ -1216,24 +1523,29 @@ void displayInfoGPS() {
     oled.print(estado);
     
     oled.setCursor (0, 15);
-    oled.print(day());
+    oled.print(gpsDay);
     oled.print("/");
-    oled.print(month());
+    oled.print(gpsMonth);
     oled.print("/");
-    oled.print(year()); 
+    oled.print(gpsYear); 
     oled.setCursor (0, 25);
     oled.print("GPS:");
-    oled.print(hour());
+    oled.print(gpsHour);
     oled.print(":");   
-    oled.print(minute());
+    oled.print(gpsMinute);
     oled.print(":"); 
-    oled.print(second());  
+    oled.print(gpsSecond);  
       
-    oled.setCursor (10, 44);		// ubica cursor en coordenas 10,30
-    oled.setTextSize(3);			// establece tamano de texto en 2
-    oled.print(second());		// escribe valor de millis() dividido por 1000
-    oled.print(" s");			// escribe texto
+    oled.setCursor (0, 35);
+    oled.print("RTC:");
+    oled.print(rtcHour);
+    oled.print(":");   
+    oled.print(rtcMinute);
+    oled.print(":"); 
+    oled.print(rtcSecond);  
+    //oled.setTextSize(3);			// establece tamano de texto en 2
     oled.display();			// muestra en pantalla todo lo establecido anteriormente
+    //readRTC();
 }
 // Función que lista los directorios en la MicroSD
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
@@ -1445,13 +1757,45 @@ void gps_p() {
         setTime(Hour, Minute, Second, Day, Month, Year);
         adjustTime(offset * SECS_PER_HOUR);
       }
+
+      
+      gps.f_get_position(&latitude, &longitude, &age);
+      // Get altitude
+      altitude = gps.f_altitude(); // Altitude in meters
+      // Get the number of satellites
+      satellites = gps.satellites();
+
+      if (age == TinyGPS::GPS_INVALID_AGE) {
+        Serial.println("No GPS data received: check wiring");
+      } else {
+        /*
+        Serial.print("Latitude: ");
+        Serial.print(latitude, 6); // 6 decimal places
+        Serial.print(", Longitude: ");
+        Serial.println(longitude, 6); // 6 decimal places*/
+      }
     }
+   
   }
   if (timeStatus()!= timeNotSet) {
     if (now() != prevDisplay) { //update the display only if the time has changed
       prevDisplay = now();
+      getTime();
       //digitalClockDisplay();  
       displayInfoGPS();
+      //Serial.println("Core #"+String(xPortGetCoreID()));
+      
+      if (setClock <= 2) {
+        //delay(10);
+        getTime();
+        rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
+        //Serial.println("RTC Adjusted 1°");
+        setClock++;
+        if (setClock==2) {
+          setClock = 3;
+        }
+
+      }
     }
   }
 }
@@ -1549,7 +1893,7 @@ void handleSubmit() {
     Serial.print("Number 2: ");
     Serial.println(num2);
 
-    Serial.println("Core #"+String(xPortGetCoreID()));
+    //Serial.println("Core #"+String(xPortGetCoreID()));
 
     // Redirect back to form
     server.sendHeader("Location", "/input?token="+sessionToken);
@@ -1566,9 +1910,9 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect("ESP32Client")) {
+    if (client.connect("ESP32Client22")) {
       Serial.println("connected");
-      Serial.println("Core #"+String(xPortGetCoreID()));
+      //Serial.println("Core #"+String(xPortGetCoreID()));
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -1581,8 +1925,8 @@ void reconnect() {
 
 void sendData(String data) {
   if (client.publish(topic, data.c_str())) {
-    Serial.println("Publish ok");
-    Serial.println("Core #"+String(xPortGetCoreID()));
+    //Serial.println("Publish ok");
+    //Serial.println("Core #"+String(xPortGetCoreID()));
   }
   else {
     Serial.println("Publish failed");
