@@ -540,24 +540,29 @@ static const unsigned char PROGMEM gImage_LOGOTL[1030] = { /* 0X00,0X01,0X80,0X0
 String id = "tl0001";
 // Create a JSON object
 StaticJsonDocument<1024> doc; // Adjust size according to your needs 
+// Serialize the JSON object to a string
+String output;
 // -----------------------Librerías para WebServer--------------------
 // -----------------------WifiManager---------------------------------
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 //WiFiManager, Local intialization. Once its business is done, there is no need to keep it around
-    WiFiManager wm;
+WiFiManager wm;
 // -------------------------------------------------------------------
 #include <WiFi.h>
 #include <WebServer.h>
-int timeout = 120; // seconds to run for
+int timeout = 60; // seconds to run for
 // Replace with your network credentials
+wl_status_t status;
+String statusWifi = "Off";
+String ip;
 /*
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
 */
-
-//const char* ssid = "TINKERSROOM";
-//const char* password = "SALATL2022";
-
+/*
+const char* ssid = "TINKERSROOM";
+const char* password = "SALATL2022";
+*/
 // Hardcoded login credentials (for demonstration only)
 const char* loginUsername = "admin";
 const char* loginPassword = "1234";
@@ -676,6 +681,7 @@ int estadoBoton[CantidadBotonEntrada] = {LOW, LOW, LOW, LOW};
 
 // Variables Globales
 int modo = 0;
+int stateReset = 0;
 
 String estado = "Aislado";
 
@@ -885,16 +891,18 @@ void webServerTask(void * parameter) {
   for(;;) {
     unsigned long currentMillis = millis(); // Get the current time
     
-    wl_status_t status = WiFi.status();
+    status = WiFi.status();
     if(status == WL_CONNECTED) {
       //Serial.println("WiFi Connected");
       if (!client.connected()) {
       reconnect();
+      statusWifi = "On";
     }
     client.loop();
     server.handleClient(); // Handle client requests
     } else {
       //Serial.println("WiFi Not Connected");
+      statusWifi = "Off";
     }
 
     getDeviceStatus();
@@ -936,6 +944,7 @@ void jsonStatus () {
       // Nested "Ctrl" object
       JsonObject ctrl = doc.createNestedObject("Ctrl");
       ctrl["estado"] = estado;
+      ctrl["resetWifi"] = stateReset;
 
       JsonObject escenarios = ctrl.createNestedObject("escenarios");
       JsonArray escenarios1 = escenarios.createNestedArray("1");
@@ -1020,10 +1029,10 @@ void jsonStatus () {
       // Nested "Wifi" object
       JsonObject wifi = doc.createNestedObject("Wifi");
       wifi["rssi"] = rssi;
-      wifi["txPower"] = txPower;
+      wifi["txPower"] = txPower-79;
+      wifi["ip"] = ip;
 
-      // Serialize the JSON object to a string
-      String output;
+      
       serializeJson(doc, output);
       sendData(output);
 
@@ -1033,6 +1042,7 @@ void jsonStatus () {
       */
 }
 void getDeviceStatus () {
+  ip = WiFi.localIP().toString();
   rssi = WiFi.RSSI();
   txPower = WiFi.getTxPower();
   temperatureRTC = rtc.getTemperature();
@@ -1069,7 +1079,6 @@ void setup() {
   initRTC();  // Reloj de Tiempo Real
   initGPS();  // GPS
 
-  initWifi(); //Wifi
 
   readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
 
@@ -1137,11 +1146,13 @@ void setup() {
   }
 
 
-  
+  initWifi(); //Wifi
   // Definición de tarea en Core 0
   xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 1
 
   //////////////////////////////////////////////////////////////////////////
+  
+
   
   delay(1000);
 }
@@ -1214,11 +1225,14 @@ void initWifi() {
     bool res;
     // res = wm.autoConnect(); // auto generated AP name from chipid
     // res = wm.autoConnect("AutoConnectAP"); // anonymous ap
+    wm.setConfigPortalTimeout(timeout);
+
     res = wm.autoConnect("AutoConnectAP","password"); // password protected ap
 
     if(!res) {
         Serial.println("Failed to connect");
-        // ESP.restart();
+        //wm.resetSettings();
+        //ESP.restart();
     } 
     else {
         //if you get here you have connected to the WiFi    
@@ -1302,6 +1316,10 @@ void modofunc(){
       estadoBoton[i] = HIGH;
       //sendData(estado);
       //rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
+      stateReset = 1;
+      jsonStatus();
+      //Serial.print("Reset");
+      delay(1000);
       wm.resetSettings();
       ESP.restart();
       previousTime = millisESP32 ();
@@ -1576,8 +1594,11 @@ void displayInfoGPS() {
     oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
     oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
     oled.setTextSize(1);			// establece tamano de texto en 1
-    oled.print("Modo: "); 	// escribe en pantalla el texto
+    oled.print("Modo:"); 	// escribe en pantalla el texto
     oled.print(estado);
+    oled.setCursor(80, 0);			// ubica cursor en inicio de coordenadas 0,0
+    oled.print("Wifi:"); 	// escribe en pantalla el texto
+    oled.print(statusWifi);
     
     oled.setCursor (0, 15);
     oled.print(gpsDay);
@@ -1967,7 +1988,7 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect("ESP32Client22")) {
+    if (client.connect("ESP32Client00")) {
       Serial.println("connected");
       //Serial.println("Core #"+String(xPortGetCoreID()));
     } else {
@@ -1981,11 +2002,15 @@ void reconnect() {
 }
 
 void sendData(String data) {
-  if (client.publish(topic, data.c_str())) {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (client.publish(topic, data.c_str())) {
     //Serial.println("Publish ok");
     //Serial.println("Core #"+String(xPortGetCoreID()));
+    }
   }
   else {
-    Serial.println("Publish failed");
+      //Serial.println("Publish failed");
+      statusWifi = "Off";
   }
+  
 }
