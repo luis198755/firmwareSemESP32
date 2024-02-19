@@ -581,6 +581,7 @@ const int mqtt_port = 1883;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+const char* mqtt_topic = "sem";
 // -----------------------Librerías para Millis--------------------
 #include <esp_timer.h>
 // -----------------------Librerías microSD------------------------
@@ -888,6 +889,7 @@ void webServerTask(void * parameter) {
   setupServer();
   // Set up MQTT
   client.setServer(mqtt_broker, mqtt_port);
+  client.setCallback(callback);
   client.setBufferSize(1024);
 
   for(;;) {
@@ -1928,6 +1930,125 @@ void handleSubmit() {
 }
 
 //////////////////////////////////QTT/////////////////////////////////
+/*
+void callback(char* topic, byte* message, unsigned int length) {
+  Serial.print("Message arrived on topic: ");
+  Serial.print(topic);
+  Serial.print(". Message: ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)message[i]);
+  }
+  Serial.println();
+}
+*/
+
+void callback(char* topic, byte* message, unsigned int length) {
+  //Serial.print("Message arrived on topic: ");
+  //Serial.print(topic);
+  //Serial.print(". Message: ");
+
+  String messageTemp;
+
+  for (int i = 0; i < length; i++) {
+    messageTemp += (char)message[i];
+  }
+  //Serial.println(messageTemp);
+
+  // Deserialize the JSON document
+  StaticJsonDocument<1024> doc; // Adjust size according to your JSON document complexity
+  DeserializationError error = deserializeJson(doc, messageTemp);
+
+  // Test if parsing succeeds.
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.f_str());
+    return;
+  }
+
+  // Process the deserialized data (example)
+  JsonObject escenarios = doc["escenarios"];
+  JsonObject eventos = doc["eventos"];
+  JsonObject ciclos = doc["ciclos"];
+  JsonObject sincronias = doc["sincronias"];
+
+  Serial.println("Escenarios:");
+  for (JsonPair kv : escenarios) {
+    const char* key = kv.key().c_str();
+    JsonArray escenarioDetails = kv.value().as<JsonArray>();
+
+    Serial.print("Escenario ");
+    Serial.print(key);
+    Serial.print(": ");
+    
+    for(int i = 0; i < escenarioDetails.size(); i++) {
+      if (i > 0) Serial.print(", ");
+      Serial.print(escenarioDetails[i].as<unsigned long>());
+    }
+    Serial.println();
+  }
+
+  // Add similar processing for eventos, ciclos, and sincronias as needed
+  // Example of processing "eventos"
+  //JsonObject eventos = doc["eventos"];
+  Serial.println("Eventos:");
+  for (JsonPair kv : eventos) {
+    const char* key = kv.key().c_str();
+    JsonArray eventDetails = kv.value().as<JsonArray>();
+
+    Serial.print("Evento ");
+    Serial.print(key);
+    Serial.print(": ");
+    
+    // Assuming each event array contains [hour, minute, id, status]
+    int hour = eventDetails[0]; // Hour
+    int minute = eventDetails[1]; // Minute
+    int ciclo = eventDetails[2]; // ID
+    int sincronia = eventDetails[3]; // Status
+
+    Serial.print("Hora: ");
+    Serial.print(hour);
+    Serial.print(":");
+    Serial.print(minute);
+    Serial.print(", Ciclo: ");
+    Serial.print(ciclo);
+    Serial.print(", Sincronía: ");
+    Serial.println(sincronia);
+  }
+
+
+  Serial.println("Ciclos:");
+  for (JsonPair kv : ciclos) {
+    const char* key = kv.key().c_str();
+    JsonArray cicloDetails = kv.value().as<JsonArray>();
+
+    Serial.print("Ciclo ");
+    Serial.print(key);
+    Serial.print(": ");
+    
+    for(int i = 0; i < cicloDetails.size(); i++) {
+      if (i > 0) Serial.print(", ");
+      Serial.print(cicloDetails[i].as<int>());
+    }
+    Serial.println();
+  }
+
+  Serial.println("Sincronias:");
+  for (JsonPair kv : sincronias) {
+    const char* key = kv.key().c_str();
+    JsonArray sincroniaDetails = kv.value().as<JsonArray>();
+
+    Serial.print("Sincronia ");
+    Serial.print(key);
+    Serial.print(": ");
+    
+    for(int i = 0; i < sincroniaDetails.size(); i++) {
+      if (i > 0) Serial.print(", ");
+      Serial.print(sincroniaDetails[i].as<int>());
+    }
+    Serial.println();
+  }
+}
+
 void reconnect() {
   // Loop until reconnected
   while (!client.connected()) {
@@ -1936,6 +2057,7 @@ void reconnect() {
     if (client.connect("ESP32Client00")) {
       Serial.println("connected");
       //Serial.println("Core #"+String(xPortGetCoreID()));
+      client.subscribe(mqtt_topic);
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
