@@ -882,6 +882,7 @@ long txPower = 0;
 ////////////////////////////////////////////////////
 unsigned long previousMillis = 0; // Stores the last time LED was updated
 const long interval = 10000; // Interval at which to blink (milliseconds)
+
 void webServerTask(void * parameter) {
   setupServer();
   // Set up MQTT
@@ -906,8 +907,6 @@ void webServerTask(void * parameter) {
     }
 
     getDeviceStatus();
-    
-
 
     if (currentMillis - previousMillis >= interval) { // If interval is exceeded
       previousMillis = currentMillis; // Save the current time
@@ -919,11 +918,93 @@ void webServerTask(void * parameter) {
 
     gps_p();
     
-    
     //vTaskDelay(1); // Delay for 1 tick period
     //delay(10); // Yield to the ESP32
   }
 }
+
+//////////////*Void Setup*/////////////
+void setup() {
+  sessionToken = generateToken();
+  //Inicialización del puerto serial del mCU
+  Serial.begin(115200);
+  
+  //////////////////////INICIALIZACIÓN DE HARDWARE/////////////////////////
+  initReg(); // Inicializa Registros
+  initBot(); // Inicializa Botones
+  Wire.begin();	// inicializa bus I2C
+  
+  initOLED(); // Pantalla
+  initCard(); // MicroSD
+  initRTC();  // Reloj de Tiempo Real
+  initGPS();  // GPS
+
+
+  readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
+
+  myFile = SD.open("/config/ctrl.conf", FILE_READ);
+  if (myFile) {
+    Serial.println("ctrl.conf:");
+    
+    
+    int row = 0; // Row counter
+    while (myFile.available() && row < 8) {
+      String line = myFile.readStringUntil('\n');
+      int startPos = 0;
+      int sepPos = line.indexOf(',', startPos);
+
+      // Parse and store the first column
+      unsigned long firstValue = strtoul(line.substring(startPos, sepPos).c_str(), NULL, 10);
+      firstColumn[row] = firstValue;
+      
+      // Parse and store the remaining columns
+      for (int col = 0; col < 8; col++) {
+        startPos = sepPos + 1;
+        sepPos = line.indexOf(',', startPos);
+        if (sepPos == -1) sepPos = line.length(); // Handle the last value
+        int value = line.substring(startPos, sepPos).toInt();
+        matrix[row][col] = value;
+      }
+      
+      Serial.print("Row ");
+      Serial.print(row);
+      Serial.print(": First Column = ");
+      Serial.print(firstColumn[row]);
+      Serial.print(", Other Columns = ");
+      for (int col = 0; col < 8; col++) {
+        Serial.print(matrix[row][col]);
+        Serial.print(" ");
+      }
+      Serial.println();
+      
+      row++;
+    }
+    myFile.close();
+  } else {
+    Serial.println("error opening ctrl.conf");
+  }
+
+
+  initWifi(); //Wifi
+  // Definición de tarea en Core 0
+  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 1
+
+  //////////////////////////////////////////////////////////////////////////
+  
+
+  
+  delay(1000);
+}
+/////////////*Void Loop*/////////////
+void loop() {
+    
+  // Lectura de Modo
+  modofunc();
+
+  //timeProc01(); 
+
+}
+//////////////////////*Funciones*/////////////////////////
 void jsonStatus () {
 
     // Populate the document
@@ -1047,157 +1128,10 @@ void getDeviceStatus () {
   txPower = WiFi.getTxPower();
   temperatureRTC = rtc.getTemperature();
 }
-void setupServer() {
-  /*
-    server.on("/", []() {
-        server.send(200, "text/plain", "Hello World");
-    });*/
-// Define routes
-  server.on("/", HTTP_GET, handleLogin);
-  server.on("/login", HTTP_GET, handleLoginCheck);
-  server.on("/input", HTTP_GET, handleInput);
-  server.on("/submit", HTTP_GET, handleSubmit);
-  server.on("/logout", HTTP_GET, handleLogout); // Logout route
-
-  // Start server
-  server.begin();
-  Serial.println("HTTP server started");
-}
-//////////////*Void Setup*/////////////
-void setup() {
-  sessionToken = generateToken();
-  //Inicialización del puerto serial del mCU
-  Serial.begin(115200);
-  
-  //////////////////////INICIALIZACIÓN DE HARDWARE/////////////////////////
-  initReg(); // Inicializa Registros
-  initBot(); // Inicializa Botones
-  Wire.begin();	// inicializa bus I2C
-  
-  initOLED(); // Pantalla
-  initCard(); // MicroSD
-  initRTC();  // Reloj de Tiempo Real
-  initGPS();  // GPS
-
-
-  readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
-
-  myFile = SD.open("/config/ctrl.conf", FILE_READ);
-  if (myFile) {
-    Serial.println("ctrl.conf:");
-    
-    /*
-    int i = 0; // Row counter for the matrix
-    while (myFile.available() && i < 8) {
-      String line = myFile.readStringUntil('\n');
-      int sepPos = line.indexOf(',');
-      
-      unsigned long firstValue = strtoul(line.substring(0, sepPos).c_str(), NULL, 10);
-      unsigned long secondValue = strtoul(line.substring(sepPos + 1).c_str(), NULL, 10);
-
-      
-      matrix[i][0] = firstValue;
-      matrix[i][1] = secondValue;
-      
-      Serial.print("Read: ");
-      Serial.print(matrix[i][0]);
-      Serial.print(",");
-      Serial.println(matrix[i][1]);
-      
-      i++;
-    }
-    myFile.close();
-    */
-    int row = 0; // Row counter
-    while (myFile.available() && row < 8) {
-      String line = myFile.readStringUntil('\n');
-      int startPos = 0;
-      int sepPos = line.indexOf(',', startPos);
-
-      // Parse and store the first column
-      unsigned long firstValue = strtoul(line.substring(startPos, sepPos).c_str(), NULL, 10);
-      firstColumn[row] = firstValue;
-      
-      // Parse and store the remaining columns
-      for (int col = 0; col < 8; col++) {
-        startPos = sepPos + 1;
-        sepPos = line.indexOf(',', startPos);
-        if (sepPos == -1) sepPos = line.length(); // Handle the last value
-        int value = line.substring(startPos, sepPos).toInt();
-        matrix[row][col] = value;
-      }
-      
-      Serial.print("Row ");
-      Serial.print(row);
-      Serial.print(": First Column = ");
-      Serial.print(firstColumn[row]);
-      Serial.print(", Other Columns = ");
-      for (int col = 0; col < 8; col++) {
-        Serial.print(matrix[row][col]);
-        Serial.print(" ");
-      }
-      Serial.println();
-      
-      row++;
-    }
-    myFile.close();
-  } else {
-    Serial.println("error opening ctrl.conf");
-  }
-
-
-  initWifi(); //Wifi
-  // Definición de tarea en Core 0
-  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 1
-
-  //////////////////////////////////////////////////////////////////////////
-  
-
-  
-  delay(1000);
-}
-/////////////*Void Loop*/////////////
-void loop() {
-  // Declaración de variables locales
-  /*
-  ///////////////////*******************
-    if ( digitalRead(botonEntrada[3]) == LOW) {
-      WiFiManager wm;    
-
-      //reset settings - for testing
-      //wm.resetSettings();
-    
-      // set configportal timeout
-      wm.setConfigPortalTimeout(timeout);
-
-      if (!wm.startConfigPortal("OnDemandAP")) {
-        Serial.println("failed to connect and hit timeout");
-        delay(3000);
-        //reset and try again, or maybe put it to deep sleep
-        ESP.restart();
-        delay(5000);
-      }
-
-      //if you get here you have connected to the WiFi
-      Serial.println("connected...yeey :)");
-
-    }
-    ///////////////////*******************
-    */
-  //gps_p();
-  
-  // Lectura de Modo
-  modofunc();
-
-  //timeProc01(); 
-
-}
-//////////////////////*Funciones*/////////////////////////
 void initWifi() {
   /*
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
-  WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
@@ -1211,8 +1145,6 @@ void initWifi() {
 
   */
   
-  
-
     // reset settings - wipe stored credentials for testing
     // these are stored by the esp library
     //wm.resetSettings();
@@ -1240,11 +1172,8 @@ void initWifi() {
         displayInfo("IP: " + WiFi.localIP().toString());
     }
     
-    /*
-    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP  
-    Serial.println("\n Starting");
-    //pinMode(TRIGGER_PIN, INPUT_PULLUP);
-    */
+    //WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
+    
   delay(3000);
 }
 // Función de interface 32 a 8 bits - en base a variables
@@ -1312,7 +1241,7 @@ void modofunc(){
       indice = 0;
       //Serial.println("Modo: Sicronizado");
       //displayInfo("Sicronizado");
-      estado = "Sicronizado";
+      estado = "Reset Wifi";
       estadoBoton[i] = HIGH;
       //sendData(estado);
       //rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
@@ -1878,6 +1807,23 @@ void gps_p() {
   }
 }
 ///////////////////////////////Server////////////////////////////////////////
+void setupServer() {
+  /*
+    server.on("/", []() {
+        server.send(200, "text/plain", "Hello World");
+    });*/
+// Define routes
+  server.on("/", HTTP_GET, handleLogin);
+  server.on("/login", HTTP_GET, handleLoginCheck);
+  server.on("/input", HTTP_GET, handleInput);
+  server.on("/submit", HTTP_GET, handleSubmit);
+  server.on("/logout", HTTP_GET, handleLogout); // Logout route
+
+  // Start server
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
 String generateToken() {
   String token = "";
   for (int i = 0; i < 16; ++i) {
