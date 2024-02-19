@@ -581,7 +581,9 @@ const int mqtt_port = 1883;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-const char* mqtt_topic = "sem";
+const char* topicProg = "sem/prog";
+const char* topicCtrl = "sem/ctrl";
+
 // -----------------------Librerías para Millis--------------------
 #include <esp_timer.h>
 // -----------------------Librerías microSD------------------------
@@ -914,9 +916,7 @@ void webServerTask(void * parameter) {
     if (currentMillis - previousMillis >= interval) { // If interval is exceeded
       previousMillis = currentMillis; // Save the current time
 
-      digitalWrite (LED_PIN, !digitalRead (LED_PIN));
-
-      //Serial.println(txPower);
+      //digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
       jsonStatus();
     }
@@ -1945,6 +1945,7 @@ void callback(char* topic, byte* message, unsigned int length) {
 void callback(char* topic, byte* message, unsigned int length) {
   //Serial.print("Message arrived on topic: ");
   //Serial.print(topic);
+  char* top = topic;
   //Serial.print(". Message: ");
 
   String messageTemp;
@@ -1954,99 +1955,128 @@ void callback(char* topic, byte* message, unsigned int length) {
   }
   //Serial.println(messageTemp);
 
-  // Deserialize the JSON document
-  StaticJsonDocument<1024> doc; // Adjust size according to your JSON document complexity
-  DeserializationError error = deserializeJson(doc, messageTemp);
 
-  // Test if parsing succeeds.
-  if (error) {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.f_str());
-    return;
-  }
+  // Compare the topic and execute the appropriate code
+  if (strcmp(topic, "sem/prog") == 0) {
+    // Handle "sem/prog" topic
+    //Serial.println("Message for sem/prog: " + messageTemp);
+    // Deserialize the JSON document
+    StaticJsonDocument<1024> doc; // Adjust size according to your JSON document complexity
+    DeserializationError error = deserializeJson(doc, messageTemp);
 
-  // Process the deserialized data (example)
-  JsonObject escenarios = doc["escenarios"];
-  JsonObject eventos = doc["eventos"];
-  JsonObject ciclos = doc["ciclos"];
-  JsonObject sincronias = doc["sincronias"];
-
-  Serial.println("Escenarios:");
-  for (JsonPair kv : escenarios) {
-    const char* key = kv.key().c_str();
-    JsonArray escenarioDetails = kv.value().as<JsonArray>();
-
-    Serial.print("Escenario ");
-    Serial.print(key);
-    Serial.print(": ");
-    
-    for(int i = 0; i < escenarioDetails.size(); i++) {
-      if (i > 0) Serial.print(", ");
-      Serial.print(escenarioDetails[i].as<unsigned long>());
+    // Test if parsing succeeds.
+    if (error) {
+      Serial.print("deserializeJson() failed: ");
+      Serial.println(error.f_str());
+      return;
     }
-    Serial.println();
-  }
 
-  // Add similar processing for eventos, ciclos, and sincronias as needed
-  // Example of processing "eventos"
-  //JsonObject eventos = doc["eventos"];
-  Serial.println("Eventos:");
-  for (JsonPair kv : eventos) {
-    const char* key = kv.key().c_str();
-    JsonArray eventDetails = kv.value().as<JsonArray>();
+    // Process the deserialized data (example)
+    JsonObject escenarios = doc["escenarios"];
+    JsonObject eventos = doc["eventos"];
+    JsonObject ciclos = doc["ciclos"];
+    JsonObject sincronias = doc["sincronias"];
 
-    Serial.print("Evento ");
-    Serial.print(key);
-    Serial.print(": ");
-    
-    // Assuming each event array contains [hour, minute, id, status]
-    int hour = eventDetails[0]; // Hour
-    int minute = eventDetails[1]; // Minute
-    int ciclo = eventDetails[2]; // ID
-    int sincronia = eventDetails[3]; // Status
+    Serial.println("Escenarios:");
+    for (JsonPair kv : escenarios) {
+      const char* key = kv.key().c_str();
+      JsonArray escenarioDetails = kv.value().as<JsonArray>();
 
-    Serial.print("Hora: ");
-    Serial.print(hour);
-    Serial.print(":");
-    Serial.print(minute);
-    Serial.print(", Ciclo: ");
-    Serial.print(ciclo);
-    Serial.print(", Sincronía: ");
-    Serial.println(sincronia);
-  }
-
-
-  Serial.println("Ciclos:");
-  for (JsonPair kv : ciclos) {
-    const char* key = kv.key().c_str();
-    JsonArray cicloDetails = kv.value().as<JsonArray>();
-
-    Serial.print("Ciclo ");
-    Serial.print(key);
-    Serial.print(": ");
-    
-    for(int i = 0; i < cicloDetails.size(); i++) {
-      if (i > 0) Serial.print(", ");
-      Serial.print(cicloDetails[i].as<int>());
+      Serial.print("Escenario ");
+      Serial.print(key);
+      Serial.print(": ");
+      
+      for(int i = 0; i < escenarioDetails.size(); i++) {
+        if (i > 0) Serial.print(", ");
+        Serial.print(escenarioDetails[i].as<unsigned long>());
+      }
+      Serial.println();
     }
-    Serial.println();
-  }
 
-  Serial.println("Sincronias:");
-  for (JsonPair kv : sincronias) {
-    const char* key = kv.key().c_str();
-    JsonArray sincroniaDetails = kv.value().as<JsonArray>();
+    // Add similar processing for eventos, ciclos, and sincronias as needed
+    // Example of processing "eventos"
+    //JsonObject eventos = doc["eventos"];
+    Serial.println("Eventos:");
+    for (JsonPair kv : eventos) {
+      const char* key = kv.key().c_str();
+      JsonArray eventDetails = kv.value().as<JsonArray>();
 
-    Serial.print("Sincronia ");
-    Serial.print(key);
-    Serial.print(": ");
-    
-    for(int i = 0; i < sincroniaDetails.size(); i++) {
-      if (i > 0) Serial.print(", ");
-      Serial.print(sincroniaDetails[i].as<int>());
+      Serial.print("Evento ");
+      Serial.print(key);
+      Serial.print(": ");
+      
+      // Assuming each event array contains [hour, minute, id, status]
+      int hour = eventDetails[0]; // Hour
+      int minute = eventDetails[1]; // Minute
+      int ciclo = eventDetails[2]; // ID
+      int sincronia = eventDetails[3]; // Status
+
+      Serial.print("Hora: ");
+      Serial.print(hour);
+      Serial.print(":");
+      Serial.print(minute);
+      Serial.print(", Ciclo: ");
+      Serial.print(ciclo);
+      Serial.print(", Sincronía: ");
+      Serial.println(sincronia);
     }
-    Serial.println();
+
+
+    Serial.println("Ciclos:");
+    for (JsonPair kv : ciclos) {
+      const char* key = kv.key().c_str();
+      JsonArray cicloDetails = kv.value().as<JsonArray>();
+
+      Serial.print("Ciclo ");
+      Serial.print(key);
+      Serial.print(": ");
+      
+      for(int i = 0; i < cicloDetails.size(); i++) {
+        if (i > 0) Serial.print(", ");
+        Serial.print(cicloDetails[i].as<int>());
+      }
+      Serial.println();
+    }
+
+    Serial.println("Sincronias:");
+    for (JsonPair kv : sincronias) {
+      const char* key = kv.key().c_str();
+      JsonArray sincroniaDetails = kv.value().as<JsonArray>();
+
+      Serial.print("Sincronia ");
+      Serial.print(key);
+      Serial.print(": ");
+      
+      for(int i = 0; i < sincroniaDetails.size(); i++) {
+        if (i > 0) Serial.print(", ");
+        Serial.print(sincroniaDetails[i].as<int>());
+      }
+      Serial.println();
   }
+  } else if (strcmp(topic, "sem/ctrl") == 0) {
+    // Handle "sem/ctrl" topic
+    Serial.println("Message for sem/ctrl: " + messageTemp);
+    int messageInt = messageTemp.toInt(); // Converts the string to int
+
+    switch (messageInt) {
+      case 0:
+        ESP.restart();
+        break;
+      case 1:
+        wm.resetSettings();
+        ESP.restart();
+        break;
+      default:
+        // statements
+        break;
+    }
+    
+  } else {
+    // Handle default case
+    Serial.println("Received message on an unknown topic.");
+  }
+
+  
 }
 
 void reconnect() {
@@ -2057,7 +2087,8 @@ void reconnect() {
     if (client.connect("ESP32Client00")) {
       Serial.println("connected");
       //Serial.println("Core #"+String(xPortGetCoreID()));
-      client.subscribe(mqtt_topic);
+      client.subscribe(topicProg);
+      client.subscribe(topicCtrl);
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
