@@ -549,6 +549,7 @@ String output;
 WiFiManager wm;
 // -------------------------------------------------------------------
 #include <WiFi.h>
+#include "esp_wifi.h"
 #include <WebServer.h>
 int timeout = 60; // seconds to run for
 // Replace with your network credentials
@@ -913,6 +914,8 @@ void webServerTask(void * parameter) {
 
       digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
+      //Serial.println(txPower);
+
       jsonStatus();
     }
 
@@ -938,7 +941,6 @@ void setup() {
   initCard(); // MicroSD
   initRTC();  // Reloj de Tiempo Real
   initGPS();  // GPS
-
 
   readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
 
@@ -987,11 +989,7 @@ void setup() {
 
   initWifi(); //Wifi
   // Definición de tarea en Core 0
-  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 1
-
-  //////////////////////////////////////////////////////////////////////////
-  
-
+  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 0
   
   delay(1000);
 }
@@ -1110,7 +1108,7 @@ void jsonStatus () {
       // Nested "Wifi" object
       JsonObject wifi = doc.createNestedObject("Wifi");
       wifi["rssi"] = rssi;
-      wifi["txPower"] = txPower-79;
+      wifi["txPower"] = txPower;
       wifi["ip"] = ip;
 
       
@@ -1173,6 +1171,7 @@ void initWifi() {
     }
     
     //WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
+    esp_wifi_set_max_tx_power(8); // Example: Set to a low value, you may need to adjust this
     
   delay(3000);
 }
