@@ -909,6 +909,8 @@ void webServerTask(void * parameter) {
     } else {
       //Serial.println("WiFi Not Connected");
       statusWifi = "Off";
+      wm.autoConnect("AutoConnectAP","password"); // password protected ap
+      
     }
 
     getDeviceStatus();
@@ -919,6 +921,7 @@ void webServerTask(void * parameter) {
       //digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
       jsonStatus();
+
     }
 
     gps_p();
@@ -1197,7 +1200,7 @@ void modofunc(){
       indice = 0;
       //Serial.println("Modo: Aislado");
       //displayInfo("Aislado");
-      estado = "Aislado";
+      
       estadoBoton[i] = HIGH;
       //sendData(estado);
       previousTime = millisESP32 ();
@@ -1212,7 +1215,7 @@ void modofunc(){
       //Serial.println("Modo: Manual");
       //Serial.print("Indice: ");
       //displayInfo("Manual");
-      estado = "Manual";
+      
       //Serial.println(indice);
       estadoBoton[i] = HIGH;
       //sendData(estado);
@@ -1228,7 +1231,7 @@ void modofunc(){
       indice = 0;
       //Serial.println("Modo: Destello");
       //displayInfo("Destello");
-      estado = "Destello";
+      
       estadoBoton[i] = HIGH;
       //sendData(estado);
       previousTime = millisESP32 ();
@@ -1242,7 +1245,7 @@ void modofunc(){
       indice = 0;
       //Serial.println("Modo: Sicronizado");
       //displayInfo("Sicronizado");
-      estado = "Reset Wifi";
+      
       estadoBoton[i] = HIGH;
       //sendData(estado);
       //rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
@@ -1265,15 +1268,19 @@ void modofunc(){
     case 0: //Aislado
         //Actualiza la máquina de estados
         aislado();
+        estado = "Aislado";
         break;
     case 1: //Manual
         aislado();
+        estado = "Manual";
         break;
     case 2: //Destello
         destello();
+        estado = "Destello";
         break;
     case 3: //Sincronizado
         sincronizado();
+        estado = "Reset Wifi";
         break;
   }
 }
@@ -1524,7 +1531,7 @@ void displayInfoGPS() {
     oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
     oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
     oled.setTextSize(1);			// establece tamano de texto en 1
-    oled.print("Modo:"); 	// escribe en pantalla el texto
+    oled.print("M:"); 	// escribe en pantalla el texto
     oled.print(estado);
     oled.setCursor(80, 0);			// ubica cursor en inicio de coordenadas 0,0
     oled.print("Wifi:"); 	// escribe en pantalla el texto
@@ -2059,12 +2066,25 @@ void callback(char* topic, byte* message, unsigned int length) {
     int messageInt = messageTemp.toInt(); // Converts the string to int
 
     switch (messageInt) {
+      case -1:
+        // Turn off WiFi
+        WiFi.mode(WIFI_OFF);
+        break;
       case 0:
         ESP.restart();
         break;
       case 1:
         wm.resetSettings();
         ESP.restart();
+        break;
+      case 2:
+        modo = 0; // Aislado
+        break;
+      case 3:
+        modo = 1; // Manual
+        break;
+      case 4:
+        modo = 2; // Destello
         break;
       default:
         // statements
