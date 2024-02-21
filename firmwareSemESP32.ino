@@ -576,13 +576,16 @@ String sessionToken; // Variable to store the session token
 
 // MQTT Broker
 const char* mqtt_broker = "3.94.215.189";
-const char* topic = "sem/modo";
 const int mqtt_port = 1883;
+const char* espClientMqtt = "ESP32Client00";
+const char* topic = "sem/modo";
+const char* topicProg = "sem/prog";
+const char* topicCtrl = "sem/ctrl";
+
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-const char* topicProg = "sem/prog";
-const char* topicCtrl = "sem/ctrl";
+
 
 // -----------------------Librerías para Millis--------------------
 #include <esp_timer.h>
@@ -885,7 +888,8 @@ long txPower = 0;
 
 ////////////////////////////////////////////////////
 unsigned long previousMillis = 0; // Stores the last time LED was updated
-const long interval = 10000; // Interval at which to blink (milliseconds)
+const long interval = 1000; // Interval at which to blink (milliseconds)
+int counEvent0 = 0;
 
 void webServerTask(void * parameter) {
   setupServer();
@@ -917,14 +921,24 @@ void webServerTask(void * parameter) {
 
     if (currentMillis - previousMillis >= interval) { // If interval is exceeded
       previousMillis = currentMillis; // Save the current time
+      
+      getTime();
 
-      //digitalWrite (LED_PIN, !digitalRead (LED_PIN));
+      digitalWrite (LED_PIN, !digitalRead (LED_PIN));
 
-      jsonStatus();
+      if ( counEvent0 == 10 ) { // Event every 10 s
+        jsonStatus();
+        counEvent0 = 0;
+      }
+      counEvent0++;
+
+      displayInfoGPS();
+
 
     }
 
     gps_p();
+    
     
     //vTaskDelay(1); // Delay for 1 tick period
     //delay(10); // Yield to the ESP32
@@ -1145,8 +1159,10 @@ void initWifi() {
   //Serial.print("IP Address: ");
   //Serial.println(WiFi.localIP());
   displayInfo("IP: " + WiFi.localIP().toString());
-
+  
   */
+
+  //esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   
     // reset settings - wipe stored credentials for testing
     // these are stored by the esp library
@@ -1176,7 +1192,7 @@ void initWifi() {
     }
     
     //WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
-    esp_wifi_set_max_tx_power(8); // Example: Set to a low value, you may need to adjust this
+    esp_wifi_set_max_tx_power(0); // Example: Set to a low value, you may need to adjust this
     
   delay(3000);
 }
@@ -1513,16 +1529,20 @@ void initGPS() {
 void getTime () {
   DateTime now = rtc.now();
   currentTime = now.unixtime();
-  gpsSecond = second();
-  gpsDay = day();
-  gpsMonth = month();
-  gpsYear = year();
-  gpsHour = hour();
-  gpsMinute = minute();
 
   rtcHour = now.hour();
   rtcMinute = now.minute();
   rtcSecond = now.second();
+
+  if (timeStatus()!= timeNotSet) {
+    gpsSecond = second();
+    gpsDay = day();
+    gpsMonth = month();
+    gpsYear = year();
+    gpsHour = hour();
+    gpsMinute = minute();
+  }
+    
 }
 // Función que muestra hora y fecha en OLED
 void displayInfoGPS() {
@@ -1795,18 +1815,18 @@ void gps_p() {
   if (timeStatus()!= timeNotSet) {
     if (now() != prevDisplay) { //update the display only if the time has changed
       prevDisplay = now();
-      getTime();
-      //digitalClockDisplay();  
-      displayInfoGPS();
-      //Serial.println("Core #"+String(xPortGetCoreID()));
+      //getTime();
+
+      //displayInfoGPS();
       
       if (setClock <= 2) {
-        //delay(10);
         getTime();
         rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
+
+        Serial.println("Clock Set");
         //Serial.println("RTC Adjusted 1°");
         setClock++;
-        if (setClock==2) {
+        if (setClock == 1) {
           setClock = 3;
         }
 
@@ -1964,7 +1984,7 @@ void callback(char* topic, byte* message, unsigned int length) {
 
 
   // Compare the topic and execute the appropriate code
-  if (strcmp(topic, "sem/prog") == 0) {
+  if (strcmp(topic, topicProg) == 0) {
     // Handle "sem/prog" topic
     //Serial.println("Message for sem/prog: " + messageTemp);
     // Deserialize the JSON document
@@ -2060,9 +2080,9 @@ void callback(char* topic, byte* message, unsigned int length) {
       }
       Serial.println();
   }
-  } else if (strcmp(topic, "sem/ctrl") == 0) {
+  } else if (strcmp(topic, topicCtrl) == 0) {
     // Handle "sem/ctrl" topic
-    Serial.println("Message for sem/ctrl: " + messageTemp);
+    //Serial.println("Message for sem/ctrl: " + messageTemp);
     int messageInt = messageTemp.toInt(); // Converts the string to int
 
     switch (messageInt) {
@@ -2086,6 +2106,9 @@ void callback(char* topic, byte* message, unsigned int length) {
       case 4:
         modo = 2; // Destello
         break;
+      case 5:
+        rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
+        break;
       default:
         // statements
         break;
@@ -2104,7 +2127,7 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect("ESP32Client00")) {
+    if (client.connect(espClientMqtt)) {
       Serial.println("connected");
       //Serial.println("Core #"+String(xPortGetCoreID()));
       client.subscribe(topicProg);
