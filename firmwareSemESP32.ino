@@ -551,11 +551,17 @@ WiFiManager wm;
 #include <WiFi.h>
 #include "esp_wifi.h"
 #include <WebServer.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 int timeout = 60; // seconds to run for
 // Replace with your network credentials
 wl_status_t status;
 String statusWifi = "Off";
 String ip;
+
+WiFiUDP ntpUDP;
+// You can specify the time offset and the NTP server address
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -21600, 60000);
 /*
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
@@ -629,6 +635,7 @@ RTC_DS3231 rtc;
 unsigned long currentTime;
 //DateTime last_time;
 int setClock = 0;
+int setClockNTP = 0;
 int rtcHour = 0;
 int rtcMinute = 0;
 int rtcSecond = 0;
@@ -910,6 +917,15 @@ void webServerTask(void * parameter) {
     }
     client.loop();
     server.handleClient(); // Handle client requests
+    
+    if (setClockNTP == 0) {
+      // Initialize the NTP client
+      timeClient.begin();
+      // Update the time
+      setTimeFromNTP();
+      setClockNTP = 1;
+    }
+    
     } else {
       //Serial.println("WiFi Not Connected");
       statusWifi = "Off";
@@ -1022,6 +1038,13 @@ void loop() {
 
 }
 //////////////////////*Funciones*/////////////////////////
+void setTimeFromNTP() {
+  timeClient.update();
+  DateTime now = DateTime(timeClient.getEpochTime());
+  rtc.adjust(now);
+  Serial.println("Time set from NTP server");
+}
+
 void jsonStatus () {
 
     // Populate the document
