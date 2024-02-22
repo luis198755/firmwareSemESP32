@@ -561,7 +561,9 @@ String ip;
 
 WiFiUDP ntpUDP;
 // You can specify the time offset and the NTP server address
-NTPClient timeClient(ntpUDP, "time-a-g.nist.gov", -21600, 60000);
+//time-a-g.nist.gov
+//pool.ntp.org
+NTPClient timeClient(ntpUDP, "mx.pool.ntp.org", -21600, 60000);
 /*
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
@@ -1214,8 +1216,8 @@ void initWifi() {
         displayInfo("IP: " + WiFi.localIP().toString());
     }
     
-    //WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
-    esp_wifi_set_max_tx_power(0); // Example: Set to a low value, you may need to adjust this
+    WiFi.setTxPower(WIFI_POWER_MINUS_1dBm); // This sets the power to the lowest possible value
+    //esp_wifi_set_max_tx_power(0); // Example: Set to a low value, you may need to adjust this
     
   delay(3000);
 }
