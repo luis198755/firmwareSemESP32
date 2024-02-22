@@ -561,9 +561,10 @@ String ip;
 
 WiFiUDP ntpUDP;
 // You can specify the time offset and the NTP server address
-//time-a-g.nist.gov
+//
 //pool.ntp.org
-NTPClient timeClient(ntpUDP, "mx.pool.ntp.org", -21600, 60000);
+//mx.pool.ntp.org
+NTPClient timeClient(ntpUDP, "time-a-g.nist.gov", -21600, 60000);
 /*
 const char* ssid = "NOC_TL";
 const char* password = "TRAFF1CNOC23";
@@ -900,154 +901,123 @@ unsigned long previousMillis = 0; // Stores the last time LED was updated
 const long interval = 1000; // Interval at which to blink (milliseconds)
 int counEvent0 = 0;
 
-void webServerTask(void * parameter) {
-  setupServer();
-  // Set up MQTT
-  client.setServer(mqtt_broker, mqtt_port);
-  client.setCallback(callback);
-  client.setBufferSize(1024);
-
-  for(;;) {
-    unsigned long currentMillis = millis(); // Get the current time
-    
-    status = WiFi.status();
-    if(status == WL_CONNECTED) {
-      //Serial.println("WiFi Connected");
-      if (!client.connected()) {
-      reconnect();
-      statusWifi = "On";
+///////////////////////*Classes*/////////////////////////////////
+class dateTime {
+public:
+    void setTimeFromNTP() {
+      timeClient.update();
+      DateTime now = DateTime(timeClient.getEpochTime());
+      rtc.adjust(now);
+      Serial.println("Time set from NTP server");
     }
-    client.loop();
-    server.handleClient(); // Handle client requests
-    
-    if (setClockNTP == 0) {
+    void setClock () {
+      if (rtc.lostPower()) {
+      Serial.println("RTC lost power, lets set the time!");
+      // following line sets the RTC to the date & time this sketch was compiled
+      // Set the RTC to the date & time this sketch was compiled
+      //rtc.adjust(DateTime(__DATE__, __TIME__));
+      //rtc.adjust(DateTime(year(), month(), day(), hour(), minute(), second()));
+      // This line sets the RTC with an explicit date & time, for example to set
+      // January 21, 2014 at 3am you would call:
+      //rtc.adjust(DateTime(2023, 2, 14, 9, 37, 0));
+
       // Initialize the NTP client
       timeClient.begin();
       // Update the time
       setTimeFromNTP();
-      setClockNTP = 1;
-    }
-    
-    } else {
-      //Serial.println("WiFi Not Connected");
-      statusWifi = "Off";
-      wm.autoConnect("AutoConnectAP","password"); // password protected ap
-      
-    }
-
-    getDeviceStatus();
-
-    if (currentMillis - previousMillis >= interval) { // If interval is exceeded
-      previousMillis = currentMillis; // Save the current time
-      
-      getTime();
-
-      digitalWrite (LED_PIN, !digitalRead (LED_PIN));
-
-      if ( counEvent0 == 10 ) { // Event every 10 s
-        jsonStatus();
-        counEvent0 = 0;
       }
-      counEvent0++;
+    }
+    void printCurrentDateTime() {
 
-      displayInfoGPS();
+        DateTime now = rtc.now();
+        currentTime = now.unixtime();
 
+        rtcHour = now.hour();
+        rtcMinute = now.minute();
+        rtcSecond = now.second();
 
+        if (timeStatus()!= timeNotSet) {
+          gpsSecond = second();
+          gpsDay = day();
+          gpsMonth = month();
+          gpsYear = year();
+          gpsHour = hour();
+          gpsMinute = minute();
+        }
+
+        /*
+        char buf[20];
+        sprintf(buf, "%04d-%02d-%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+        Serial.println(buf);
+        */
     }
 
-    gps_p();
-    
-    
-    //vTaskDelay(1); // Delay for 1 tick period
-    //delay(10); // Yield to the ESP32
-  }
-}
+    // Función que muestra hora y fecha en OLED
+    void displayInfoGPS() {
+        
+        oled.clearDisplay();			// limpia pantalla
+        oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
+        oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
+        oled.setTextSize(1);			// establece tamano de texto en 1
+        oled.print("M:"); 	// escribe en pantalla el texto
+        oled.print(estado);
+        oled.setCursor(80, 0);			// ubica cursor en inicio de coordenadas 0,0
+        oled.print("Wifi:"); 	// escribe en pantalla el texto
+        oled.print(statusWifi);
+        
+        oled.setCursor (0, 15);
+        oled.print(gpsDay);
+        oled.print("/");
+        oled.print(gpsMonth);
+        oled.print("/");
+        oled.print(gpsYear); 
+        oled.setCursor (0, 25);
+        oled.print("GPS:");
+        oled.print(gpsHour);
+        oled.print(":");   
+        oled.print(gpsMinute);
+        oled.print(":"); 
+        oled.print(gpsSecond);  
+          
+        oled.setCursor (0, 35);
+        oled.print("RTC:");
+        oled.print(rtcHour);
+        oled.print(":");   
+        oled.print(rtcMinute);
+        oled.print(":"); 
+        oled.print(rtcSecond);  
+        //oled.setTextSize(3);			// establece tamano de texto en 2
+        oled.display();			// muestra en pantalla todo lo establecido anteriormente
+        //readRTC();
+      }
+};
 
-//////////////*Void Setup*/////////////
-void setup() {
-  sessionToken = generateToken();
-  //Inicialización del puerto serial del mCU
-  Serial.begin(115200);
-  
-  //////////////////////INICIALIZACIÓN DE HARDWARE/////////////////////////
-  initReg(); // Inicializa Registros
-  initBot(); // Inicializa Botones
-  Wire.begin();	// inicializa bus I2C
-  
-  initOLED(); // Pantalla
-  initCard(); // MicroSD
-  initRTC();  // Reloj de Tiempo Real
-  initGPS();  // GPS
+dateTime dateTime;
 
-  readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
-
-  myFile = SD.open("/config/ctrl.conf", FILE_READ);
-  if (myFile) {
-    Serial.println("ctrl.conf:");
-    
-    
-    int row = 0; // Row counter
-    while (myFile.available() && row < 8) {
-      String line = myFile.readStringUntil('\n');
-      int startPos = 0;
-      int sepPos = line.indexOf(',', startPos);
-
-      // Parse and store the first column
-      unsigned long firstValue = strtoul(line.substring(startPos, sepPos).c_str(), NULL, 10);
-      firstColumn[row] = firstValue;
-      
-      // Parse and store the remaining columns
-      for (int col = 0; col < 8; col++) {
-        startPos = sepPos + 1;
-        sepPos = line.indexOf(',', startPos);
-        if (sepPos == -1) sepPos = line.length(); // Handle the last value
-        int value = line.substring(startPos, sepPos).toInt();
-        matrix[row][col] = value;
+class devices {
+  public:
+    void sendData(String data) {
+      if (WiFi.status() == WL_CONNECTED) {
+        if (client.publish(topic, data.c_str())) {
+        //Serial.println("Publish ok");
+        //Serial.println("Core #"+String(xPortGetCoreID()));
+        }
+      }
+      else {
+          //Serial.println("Publish failed");
+          statusWifi = "Off";
       }
       
-      Serial.print("Row ");
-      Serial.print(row);
-      Serial.print(": First Column = ");
-      Serial.print(firstColumn[row]);
-      Serial.print(", Other Columns = ");
-      for (int col = 0; col < 8; col++) {
-        Serial.print(matrix[row][col]);
-        Serial.print(" ");
-      }
-      Serial.println();
-      
-      row++;
     }
-    myFile.close();
-  } else {
-    Serial.println("error opening ctrl.conf");
-  }
 
+    void getStatus () {
+      ip = WiFi.localIP().toString();
+      rssi = WiFi.RSSI();
+      txPower = WiFi.getTxPower();
+      temperatureRTC = rtc.getTemperature();
+    }
 
-  initWifi(); //Wifi
-  // Definición de tarea en Core 0
-  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 0
-  
-  delay(1000);
-}
-/////////////*Void Loop*/////////////
-void loop() {
-    
-  // Lectura de Modo
-  modofunc();
-
-  //timeProc01(); 
-
-}
-//////////////////////*Funciones*/////////////////////////
-void setTimeFromNTP() {
-  timeClient.update();
-  DateTime now = DateTime(timeClient.getEpochTime());
-  rtc.adjust(now);
-  Serial.println("Time set from NTP server");
-}
-
-void jsonStatus () {
+    void sendStatus () {
 
     // Populate the document
       doc["id"] = id;
@@ -1163,13 +1133,149 @@ void jsonStatus () {
       Serial.print("ID: ");
       Serial.println(doc["id"].as<String>());
       */
+    }
+
+};
+
+devices devices;
+
+/////////////////////////////////////////////////////////////////
+
+void webServerTask(void * parameter) {
+  setupServer();
+  // Set up MQTT
+  client.setServer(mqtt_broker, mqtt_port);
+  client.setCallback(callback);
+  client.setBufferSize(1024);
+
+  for(;;) {
+    unsigned long currentMillis = millis(); // Get the current time
+    
+    status = WiFi.status();
+    if(status == WL_CONNECTED) {
+      //Serial.println("WiFi Connected");
+      if (!client.connected()) {
+      reconnect();
+      statusWifi = "On";
+    }
+    client.loop();
+    server.handleClient(); // Handle client requests
+
+    dateTime.setClock(); // Set date if RTC lost power
+
+    } else {
+      //Serial.println("WiFi Not Connected");
+      statusWifi = "Off";
+      wm.autoConnect("AutoConnectAP","password"); // password protected ap
+      
+    }
+
+    devices.getStatus();
+
+    if (currentMillis - previousMillis >= interval) { // If interval is exceeded
+      previousMillis = currentMillis; // Save the current time
+      
+      dateTime.printCurrentDateTime(); // Print the current date and time
+      dateTime.displayInfoGPS();
+
+      digitalWrite (LED_PIN, !digitalRead (LED_PIN));
+
+      if ( counEvent0 == 10 ) { // Event every 10 s
+        devices.sendStatus();
+        counEvent0 = 0;
+      }
+      counEvent0++;
+
+    }
+
+    gps_p();
+    
+    
+    //vTaskDelay(1); // Delay for 1 tick period
+    //delay(10); // Yield to the ESP32
+  }
 }
-void getDeviceStatus () {
-  ip = WiFi.localIP().toString();
-  rssi = WiFi.RSSI();
-  txPower = WiFi.getTxPower();
-  temperatureRTC = rtc.getTemperature();
+
+
+//////////////*Void Setup*/////////////
+void setup() {
+  sessionToken = generateToken();
+  //Inicialización del puerto serial del mCU
+  Serial.begin(115200);
+  
+  //////////////////////INICIALIZACIÓN DE HARDWARE/////////////////////////
+  initReg(); // Inicializa Registros
+  initBot(); // Inicializa Botones
+  Wire.begin();	// inicializa bus I2C
+  
+  initOLED(); // Pantalla
+  initCard(); // MicroSD
+  initRTC();  // Reloj de Tiempo Real
+  initGPS();  // GPS
+
+  readFile(SD, "/prog.txt"); // Lectura de Prueba MicroSD
+
+  myFile = SD.open("/config/ctrl.conf", FILE_READ);
+  if (myFile) {
+    Serial.println("ctrl.conf:");
+    
+    
+    int row = 0; // Row counter
+    while (myFile.available() && row < 8) {
+      String line = myFile.readStringUntil('\n');
+      int startPos = 0;
+      int sepPos = line.indexOf(',', startPos);
+
+      // Parse and store the first column
+      unsigned long firstValue = strtoul(line.substring(startPos, sepPos).c_str(), NULL, 10);
+      firstColumn[row] = firstValue;
+      
+      // Parse and store the remaining columns
+      for (int col = 0; col < 8; col++) {
+        startPos = sepPos + 1;
+        sepPos = line.indexOf(',', startPos);
+        if (sepPos == -1) sepPos = line.length(); // Handle the last value
+        int value = line.substring(startPos, sepPos).toInt();
+        matrix[row][col] = value;
+      }
+      
+      Serial.print("Row ");
+      Serial.print(row);
+      Serial.print(": First Column = ");
+      Serial.print(firstColumn[row]);
+      Serial.print(", Other Columns = ");
+      for (int col = 0; col < 8; col++) {
+        Serial.print(matrix[row][col]);
+        Serial.print(" ");
+      }
+      Serial.println();
+      
+      row++;
+    }
+    myFile.close();
+  } else {
+    Serial.println("error opening ctrl.conf");
+  }
+
+
+  initWifi(); //Wifi
+  // Definición de tarea en Core 0
+  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 10000, NULL, 1, NULL, 0); // Run on Core 0
+  
+  delay(1000);
 }
+/////////////*Void Loop*/////////////
+void loop() {
+    
+  // Lectura de Modo
+  modofunc();
+
+  //timeProc01(); 
+
+}
+//////////////////////*Funciones*/////////////////////////
+
+
 void initWifi() {
   /*
   // Connect to Wi-Fi
@@ -1291,7 +1397,7 @@ void modofunc(){
       //sendData(estado);
       //rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
       stateReset = 1;
-      jsonStatus();
+      devices.sendStatus();
       //Serial.print("Reset");
       delay(1000);
       wm.resetSettings();
@@ -1474,21 +1580,13 @@ void initRTC() {
     while (1);
   }
 
-  if (rtc.lostPower()) {
-      Serial.println("RTC lost power, lets set the time!");
-      // following line sets the RTC to the date & time this sketch was compiled
-      // Set the RTC to the date & time this sketch was compiled
-      rtc.adjust(DateTime(__DATE__, __TIME__));
-      //rtc.adjust(DateTime(year(), month(), day(), hour(), minute(), second()));
-      // This line sets the RTC with an explicit date & time, for example to set
-      // January 21, 2014 at 3am you would call:
-      //rtc.adjust(DateTime(2023, 2, 14, 9, 37, 0));
-      
-  }
+  
   
   // Store the current time
   //last_time = rtc.now();
-  DateTime now = rtc.now();
+  
+  
+  //DateTime now = rtc.now();
 
 
   // Print initialization message
@@ -1551,6 +1649,7 @@ void initGPS() {
   Serial1.begin(GPSBaud); 
   
 }
+/*
 void getTime () {
   DateTime now = rtc.now();
   currentTime = now.unixtime();
@@ -1569,44 +1668,7 @@ void getTime () {
   }
     
 }
-// Función que muestra hora y fecha en OLED
-void displayInfoGPS() {
-    
-    oled.clearDisplay();			// limpia pantalla
-    oled.setTextColor(WHITE);		// establece color al unico disponible (pantalla monocromo)
-    oled.setCursor(0, 0);			// ubica cursor en inicio de coordenadas 0,0
-    oled.setTextSize(1);			// establece tamano de texto en 1
-    oled.print("M:"); 	// escribe en pantalla el texto
-    oled.print(estado);
-    oled.setCursor(80, 0);			// ubica cursor en inicio de coordenadas 0,0
-    oled.print("Wifi:"); 	// escribe en pantalla el texto
-    oled.print(statusWifi);
-    
-    oled.setCursor (0, 15);
-    oled.print(gpsDay);
-    oled.print("/");
-    oled.print(gpsMonth);
-    oled.print("/");
-    oled.print(gpsYear); 
-    oled.setCursor (0, 25);
-    oled.print("GPS:");
-    oled.print(gpsHour);
-    oled.print(":");   
-    oled.print(gpsMinute);
-    oled.print(":"); 
-    oled.print(gpsSecond);  
-      
-    oled.setCursor (0, 35);
-    oled.print("RTC:");
-    oled.print(rtcHour);
-    oled.print(":");   
-    oled.print(rtcMinute);
-    oled.print(":"); 
-    oled.print(rtcSecond);  
-    //oled.setTextSize(3);			// establece tamano de texto en 2
-    oled.display();			// muestra en pantalla todo lo establecido anteriormente
-    //readRTC();
-}
+*/
 // Función que lista los directorios en la MicroSD
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
     Serial.printf("Listing directory: %s\n", dirname);
@@ -1845,16 +1907,16 @@ void gps_p() {
       //displayInfoGPS();
       
       if (setClock <= 2) {
+        /* Set Clock with GPS
         getTime();
         rtc.adjust(DateTime(gpsYear, gpsMonth, gpsDay, gpsHour, gpsMinute, gpsSecond));
-
-        Serial.println("Clock Set");
+        Serial.println("Time set from GPS");
         //Serial.println("RTC Adjusted 1°");
         setClock++;
-        if (setClock == 1) {
+        if (setClock == 2) {
           setClock = 3;
         }
-
+        */
       }
     }
   }
@@ -2167,16 +2229,4 @@ void reconnect() {
   }
 }
 
-void sendData(String data) {
-  if (WiFi.status() == WL_CONNECTED) {
-    if (client.publish(topic, data.c_str())) {
-    //Serial.println("Publish ok");
-    //Serial.println("Core #"+String(xPortGetCoreID()));
-    }
-  }
-  else {
-      //Serial.println("Publish failed");
-      statusWifi = "Off";
-  }
-  
-}
+
